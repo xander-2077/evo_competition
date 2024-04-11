@@ -642,7 +642,7 @@ if __name__ == "__main__":
 
     sys.path.append("../../..")
     import argparse
-    from config.config import cfg
+    from config.env_cfg.config import cfg
 
     # Load config options
     parser = argparse.ArgumentParser(description="User's arguments from terminal.")

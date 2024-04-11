@@ -7,13 +7,11 @@ import numpy as np
 class Config:
 
     def __init__(self, cfg_path):
-        self.cfg_path = cfg_path
-        files = glob.glob(cfg_path, recursive=True)
+        self.cfg_path = './config/env_cfg/' + cfg_path
+        files = glob.glob(self.cfg_path, recursive=True)
         assert(len(files) == 1)
         cfg = yaml.safe_load(open(files[0], 'r'))
         self.cfg = cfg
-        # create dirs
-        self.out_dir = '/root/ws/competevo/tmp'
 
         # main config
         self.env_name = cfg.get('env_name')

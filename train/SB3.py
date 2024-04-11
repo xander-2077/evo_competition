@@ -2,7 +2,7 @@ import competevo
 import gym_compete
 
 import gymnasium as gym
-from config.config import Config
+from config.env_cfg.config import Config
 import argparse
 
 from stable_baselines3 import PPO
