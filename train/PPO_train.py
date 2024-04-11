@@ -5,16 +5,11 @@ import competevo
 import gym_compete
 
 import gymnasium as gym
-# from config.env_cfg.config import Config
-import argparse
 import hydra
-from dotmap import DotMap
 from omegaconf import OmegaConf
 
 import os
-import glob
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -24,14 +19,8 @@ from train.PPO_policy import PPO
 
 @hydra.main(config_path="../config", config_name="config", version_base="1.3")
 def train(cfg):
-    # cfg = DotMap(OmegaConf.to_container(cfg, resolve=True))
-
-
-    print("============================================================================================")
-
     ####### initialize environment hyperparameters ######
-    env_name = cfg.env_name
-    # import pdb; pdb.set_trace()
+    env_name = cfg.env.env_name
 
     has_continuous_action_space = cfg.algo.has_continuous_action_space  # continuous action space; else discrete
 
@@ -63,11 +52,8 @@ def train(cfg):
     random_seed = cfg.algo.random_seed         # set random seed if required (0 = no random seed)
 
     ################ Env setting #########################
-
-    print("training environment name : " + env_name)
-
     # env = gym.make(env_name, cfg=cfg, render_mode="human")
-    env = gym.make(env_name, cfg=cfg, render_mode=None)
+    env = gym.make(env_name, cfg=cfg.env, render_mode=None)
 
     # state space dimension
     state_dim = env.observation_space[0].shape[0]
@@ -89,7 +75,7 @@ def train(cfg):
 
     current_time = datetime.now().strftime('%m-%d_%H-%M')
 
-    root_dir = root_dir + '/' + current_time + '_PPO'
+    root_dir = root_dir + '/' + current_time + '_' + cfg.algo.name + '/'
     if not os.path.exists(root_dir):
         os.makedirs(root_dir)
 
@@ -136,18 +122,11 @@ def train(cfg):
         torch.manual_seed(random_seed)
         env.seed(random_seed)
         np.random.seed(random_seed)
-    #####################################################
-
-    print("============================================================================================")
 
     ################# training procedure ################
 
     # initialize a PPO agent
     ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
-
-    # track total training time
-    start_time = datetime.now().replace(microsecond=0)
-    print("Started training at (GMT) : ", start_time)
 
     print("============================================================================================")
 
@@ -222,12 +201,7 @@ def train(cfg):
 
             # save model weights
             if time_step % save_model_freq == 0:
-                print("--------------------------------------------------------------------------------------------")
-                print("saving model at : " + checkpoint_path)
                 ppo_agent.save(checkpoint_path)
-                print("model saved")
-                print("Elapsed Time  : ", datetime.now().replace(microsecond=0) - start_time)
-                print("--------------------------------------------------------------------------------------------")
 
             # break; if the episode is over
             if done:
@@ -243,29 +217,6 @@ def train(cfg):
 
     env.close()
 
-    # print total training time
-    print("============================================================================================")
-    end_time = datetime.now().replace(microsecond=0)
-    print("Started training at (GMT) : ", start_time)
-    print("Finished training at (GMT) : ", end_time)
-    print("Total training time  : ", end_time - start_time)
-    print("============================================================================================")
-
 
 if __name__ == '__main__':
-    # parser = argparse.ArgumentParser(description="User's arguments from terminal.")
-    # parser.add_argument("--cfg", 
-    #                     dest="cfg_file", 
-    #                     help="Config file", 
-    #                     required=True, 
-    #                     type=str)
-    # # parser.add_argument('--use_cuda', type=bool, default=True)
-    # # parser.add_argument('--gpu_index', type=int, default=0)
-    # # parser.add_argument('--num_threads', type=int, default=1)
-    # # parser.add_argument('--epoch', type=str, default='0')
-    # args = parser.parse_args()
-    # cfg = Config(args.cfg_file)
-
-    # import pdb; pdb.set_trace()
-
     train()
