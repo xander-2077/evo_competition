@@ -1,0 +1,13 @@
+env_name: ${env.env_name}
+algo_name: "${algo.algo_name}"
+
+
+defaults:
+  - algo : PPO
+  - env : robo-sumo-ants-v0
+  - _self_
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .
