@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/root/ws')
+
 import competevo
 import gym_compete
 

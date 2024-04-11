@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/root/ws')
+
 import competevo
 import gym_compete
 
@@ -8,12 +11,13 @@ import argparse
 import os
 import glob
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import torch
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
-from PPO_policy import PPO
+from train.PPO_policy import PPO
 
 def str2bool(input_str):
     """Converts a string to a boolean value.
@@ -41,7 +45,6 @@ def train(cfg):
     print("============================================================================================")
 
     ####### initialize environment hyperparameters ######
-    # env_name = "RoboschoolWalker2d-v1"
     env_name = cfg.env_name
 
     has_continuous_action_space = True  # continuous action space; else discrete
@@ -76,12 +79,9 @@ def train(cfg):
 
     print("training environment name : " + env_name)
 
-    # env = gym.make(env_name)
-
-    env = gym.make(env_name, cfg=cfg, render_mode="human")
+    # env = gym.make(env_name, cfg=cfg, render_mode="human")
+    env = gym.make(env_name, cfg=cfg, render_mode=None)
     # import pdb; pdb.set_trace()
-    # env = gym.make(env_name, cfg=cfg, render_mode=None)
-    # obs, _ = env.reset()
 
     # state space dimension
     state_dim = env.observation_space[0].shape[0]
@@ -93,42 +93,59 @@ def train(cfg):
         action_dim = env.action_space.n
 
     ###################### logging ######################
+    
+    
+    
+
+
+
 
     #### log files for multiple runs are NOT overwritten
-    log_dir = "PPO_logs"
-    if not os.path.exists(log_dir):
-          os.makedirs(log_dir)
+    root_dir = "./result"
+    if not os.path.exists(root_dir):
+        os.makedirs(root_dir)
 
-    log_dir = log_dir + '/' + env_name + '/'
-    if not os.path.exists(log_dir):
-          os.makedirs(log_dir)
+    root_dir = root_dir + '/' + env_name + '/'
+    if not os.path.exists(root_dir):
+        os.makedirs(root_dir)
 
-    #### get number of log files in log directory
-    run_num = 0
-    current_num_files = next(os.walk(log_dir))[2]
-    run_num = len(current_num_files)
+    current_time = (datetime.now()+ timedelta(hours=10)).strftime('%m-%d_%H-%M')
 
-    #### create new log file for each run
-    log_f_name = log_dir + '/PPO_' + env_name + "_log_" + str(run_num) + ".csv"
+    root_dir = root_dir + '/' + current_time + '_PPO'
+    if not os.path.exists(root_dir):
+        os.makedirs(root_dir)
 
-    print("current logging run number for " + env_name + " : ", run_num)
-    print("logging at : " + log_f_name)
+    writer = SummaryWriter(log_dir=root_dir)
+
+    # #### get number of log files in log directory
+    # run_num = 0
+    # current_num_files = next(os.walk(log_dir))[2]
+    # run_num = len(current_num_files)
+
+    # #### create new log file for each run
+    # log_f_name = log_dir + '/PPO_' + env_name + "_log_" + str(run_num) + ".csv"
+
+    # print("current logging run number for " + env_name + " : ", run_num)
+    # print("logging at : " + log_f_name)
     #####################################################
 
     ################### checkpointing ###################
-    run_num_pretrained = 0      #### change this to prevent overwriting weights in same env_name folder
+    # run_num_pretrained = 0      #### change this to prevent overwriting weights in same env_name folder
 
-    directory = "PPO_preTrained"
-    if not os.path.exists(directory):
-          os.makedirs(directory)
+    # directory = "./result/model"
+    # if not os.path.exists(directory):
+    #       os.makedirs(directory)
 
-    directory = directory + '/' + env_name + '/'
-    if not os.path.exists(directory):
-          os.makedirs(directory)
+    # directory = directory + '/' + env_name + '/'
+    # if not os.path.exists(directory):
+    #       os.makedirs(directory)
 
 
-    checkpoint_path = directory + "PPO_{}_{}_{}.pth".format(env_name, random_seed, run_num_pretrained)
-    print("save checkpoint path : " + checkpoint_path)
+    # checkpoint_path = directory + "PPO_{}_{}_{}.pth".format(env_name, random_seed, run_num_pretrained)
+
+    checkpoint_path = root_dir + '/ppoagent.pth'
+
+    # print("save checkpoint path : " + checkpoint_path)
     #####################################################
 
 
@@ -182,8 +199,8 @@ def train(cfg):
     print("============================================================================================")
 
     # logging file
-    log_f = open(log_f_name,"w+")
-    log_f.write('episode,timestep,reward\n')
+    # log_f = open(log_f_name,"w+")
+    # log_f.write('episode,timestep,reward\n')
 
     # printing and logging variables
     print_running_reward = 0
@@ -240,8 +257,9 @@ def train(cfg):
                 log_avg_reward = log_running_reward / log_running_episodes
                 log_avg_reward = round(log_avg_reward, 4)
 
-                log_f.write('{},{},{}\n'.format(i_episode, time_step, log_avg_reward))
-                log_f.flush()
+                writer.add_scalar('log_avg_reward', log_avg_reward, time_step)
+                # log_f.write('{},{},{}\n'.format(i_episode, time_step, log_avg_reward))
+                # log_f.flush()
 
                 log_running_reward = 0
                 log_running_episodes = 0
@@ -279,7 +297,7 @@ def train(cfg):
 
         i_episode += 1
 
-    log_f.close()
+    # log_f.close()
     env.close()
 
     # print total training time
@@ -307,12 +325,3 @@ if __name__ == '__main__':
     cfg = Config(args.cfg_file)
 
     train(cfg)
-
-    # for _ in range(10000):
-    #     action = env.action_space.sample()  # this is where you would insert your policy
-
-    #     observation, reward, terminated, truncated, info = env.step(action)
-
-    #     if any(terminated) or truncated:
-    #         observation, info = env.reset()
-    # env.close()
