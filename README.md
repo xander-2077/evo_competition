@@ -1,4 +1,13 @@
 # Evo Competition
+
+### Additional Notion
+
+`train/` folder is some scipts for training algorithms.
+
+`test/` folder is some scipts for test.
+
+---
+
 The task is to evolve and train a pair of agents to compete with each other.
 
 Two levels of difficulties are provided:
