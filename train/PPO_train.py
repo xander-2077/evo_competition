@@ -1,6 +1,5 @@
 import sys
 sys.path.append('/root/ws')
-
 import competevo
 import gym_compete
 
@@ -16,6 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 from train.PPO_policy import PPO
+
 
 @hydra.main(config_path="../config", config_name="config", version_base="1.3")
 def train(cfg):
