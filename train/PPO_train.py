@@ -75,7 +75,7 @@ def train(cfg):
 
     current_time = datetime.now().strftime('%m-%d_%H-%M')
 
-    root_dir = root_dir + '/' + current_time + '_' + cfg.algo.name + '/'
+    root_dir = root_dir + '/' + current_time + '_' + cfg.algo.algo_name + '/'
     if not os.path.exists(root_dir):
         os.makedirs(root_dir)
 
