@@ -43,8 +43,8 @@ class ActorCritic(nn.Module):
         
         if has_continuous_action_space:
             self.action_dim = action_dim
-            # import pdb; pdb.set_trace()
             self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
+
         # actor
         if has_continuous_action_space :
             self.actor = nn.Sequential(
@@ -72,7 +72,6 @@ class ActorCritic(nn.Module):
                         nn.Tanh(),
                         nn.Linear(64, 1)
                     )
-        # import pdb; pdb.set_trace()
         
     def set_action_std(self, new_action_std):
         if self.has_continuous_action_space:
@@ -99,15 +98,12 @@ class ActorCritic(nn.Module):
         action_logprob = dist.log_prob(action)
         state_val = self.critic(state)
 
-        # import pdb; pdb.set_trace()
-
         return action.detach(), action_logprob.detach(), state_val.detach()
     
     def evaluate(self, state, action):
-
+        # TODO: 输出的动作必须要限定在ENV的动作范围内
         if self.has_continuous_action_space:
             action_mean = self.actor(state)
-            
             action_var = self.action_var.expand_as(action_mean)
             cov_mat = torch.diag_embed(action_var).to(device)
             dist = MultivariateNormal(action_mean, cov_mat)
@@ -118,6 +114,7 @@ class ActorCritic(nn.Module):
         else:
             action_probs = self.actor(state)
             dist = Categorical(action_probs)
+
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
         state_values = self.critic(state)
@@ -138,7 +135,6 @@ class PPO:
         self.K_epochs = K_epochs
         
         self.buffer = RolloutBuffer()
-        # import pdb; pdb.set_trace()
         self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
