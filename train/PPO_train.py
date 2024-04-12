@@ -21,7 +21,7 @@ from train.PPO_policy import PPO
 def train(cfg):
     env_name = cfg.env.env_name
     has_continuous_action_space = cfg.algo.has_continuous_action_space
-    max_ep_len = cfg.algo.max_ep_len           
+    max_ep_len = cfg.algo.max_ep_len     # TODO: 这取决于环境的最大步数      
     max_training_timesteps = cfg.algo.max_training_timesteps   
     print_freq = max_ep_len * 10        # print avg reward in the interval (in num timesteps)
     log_freq = max_ep_len * 2           # log avg reward in the interval (in num timesteps)
@@ -118,12 +118,14 @@ def train(cfg):
     ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
 
     print("============================================================================================")
+
     # printing and logging variables
     print_running_reward = 0
     print_running_episodes = 0
 
-    log_running_reward = 0
-    log_running_episodes = 0
+    # log_running_reward = 0
+    # log_running_episodes = 0
+
     time_step = 0
     i_episode = 0
 
@@ -160,17 +162,17 @@ def train(cfg):
             if has_continuous_action_space and time_step % action_std_decay_freq == 0:
                 ppo_agent.decay_action_std(action_std_decay_rate, min_action_std)
 
-            # log in logging file
-            if time_step % log_freq == 0:
+            # # log in logging file
+            # if time_step % log_freq == 0:
 
-                # log average reward till last episode
-                log_avg_reward = log_running_reward / log_running_episodes
-                log_avg_reward = round(log_avg_reward, 4)
+            #     # log average reward till last episode
+            #     log_avg_reward = log_running_reward / log_running_episodes
+            #     log_avg_reward = round(log_avg_reward, 4)
 
-                writer.add_scalar('log_avg_reward', log_avg_reward, time_step)
+            #     writer.add_scalar('log_avg_reward', log_avg_reward, time_step)
 
-                log_running_reward = 0
-                log_running_episodes = 0
+            #     log_running_reward = 0
+            #     log_running_episodes = 0
 
             # printing average reward
             if time_step % print_freq == 0:
@@ -183,7 +185,7 @@ def train(cfg):
 
                 print_running_reward = 0
                 print_running_episodes = 0
-                
+
             # save model weights
             if time_step % save_model_freq == 0:
                 ppo_agent.save(checkpoint_path)
@@ -191,12 +193,16 @@ def train(cfg):
             # break; if the episode is over
             if done:
                 break
-
+        
+        writer.add_scalar('episode/episode_reward', current_ep_reward, i_episode)
+        writer.add_scalar('episode/episode_length', t, i_episode)
+        writer.add_scalar('timestep/reward', current_ep_reward, time_step)
+        
         print_running_reward += current_ep_reward
         print_running_episodes += 1
 
-        log_running_reward += current_ep_reward
-        log_running_episodes += 1
+        # log_running_reward += current_ep_reward
+        # log_running_episodes += 1
 
         i_episode += 1
 
