@@ -53,7 +53,7 @@ def train(cfg):
 
     ################ Env setting #########################
     # env = gym.make(env_name, cfg=cfg, render_mode="human")
-    env = gym.make(env_name, cfg=cfg.env, render_mode=None)
+    env = gym.make(env_name, cfg=cfg.env, render_mode=cfg.render_mode)
 
     # state space dimension
     state_dim = env.observation_space[0].shape[0]

@@ -1,3 +1,4 @@
+render_mode: None   # None, human, rgb_array, rgb_array_float
 
 defaults:
   - algo : PPO
