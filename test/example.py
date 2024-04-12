@@ -5,7 +5,7 @@ import competevo
 import gym_compete
 
 import gymnasium as gym
-from config.env_cfg.config import Config
+from config.env.config import Config
 import argparse
 
 def str2bool(input_str):
@@ -43,13 +43,10 @@ args = parser.parse_args()
 cfg = Config(args.cfg_file)
 
 env = gym.make(cfg.env_name, cfg=cfg, render_mode="human")
-# env = gym.make(cfg.env_name, cfg=cfg, render_mode=None)
 obs, _ = env.reset()
 
 for _ in range(10000):
-#    import pdb; pdb.set_trace()
    action = env.action_space.sample()  # this is where you would insert your policy
-#    print(action)
    observation, reward, terminated, truncated, info = env.step(action)
 
    if any(terminated) or truncated:

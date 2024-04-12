@@ -7,7 +7,7 @@ import numpy as np
 class Config:
 
     def __init__(self, cfg_path):
-        self.cfg_path = './config/env_cfg/' + cfg_path
+        self.cfg_path = './config/env/' + cfg_path
         files = glob.glob(self.cfg_path, recursive=True)
         assert(len(files) == 1)
         cfg = yaml.safe_load(open(files[0], 'r'))
