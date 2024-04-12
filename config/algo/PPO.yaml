@@ -1,3 +1,4 @@
+####### initialize environment hyperparameters ######
 algo_name: 'PPO'
 
 has_continuous_action_space: True  # continuous action space; else discrete
@@ -13,6 +14,11 @@ action_std_decay_rate: 0.05        # linearly decay action_std (action_std: acti
 min_action_std: 0.1                # minimum action_std (stop decay after action_std <= min_action_std)
 action_std_decay_freq: 2.5e5  # action_std decay frequency (in num timesteps)
 
+#####################################################
+
+## Note : print/log frequencies should be > than max_ep_len
+
+################ PPO hyperparameters ################
 K_epochs: 80               # update policy for K epochs in one PPO update
 
 eps_clip: 0.2          # clip parameter for PPO

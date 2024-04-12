@@ -19,50 +19,37 @@ from train.PPO_policy import PPO
 
 @hydra.main(config_path="../config", config_name="config", version_base="1.3")
 def train(cfg):
-    ####### initialize environment hyperparameters ######
     env_name = cfg.env.env_name
-
-    has_continuous_action_space = cfg.algo.has_continuous_action_space  # continuous action space; else discrete
-
-    max_ep_len = cfg.algo.max_ep_len                   # max timesteps in one episode
-    max_training_timesteps = cfg.algo.max_training_timesteps   # break training loop if timeteps > max_training_timesteps
-
+    has_continuous_action_space = cfg.algo.has_continuous_action_space
+    max_ep_len = cfg.algo.max_ep_len           
+    max_training_timesteps = cfg.algo.max_training_timesteps   
     print_freq = max_ep_len * 10        # print avg reward in the interval (in num timesteps)
     log_freq = max_ep_len * 2           # log avg reward in the interval (in num timesteps)
-    save_model_freq = cfg.algo.save_model_freq          # save model frequency (in num timesteps)
-
-    action_std = cfg.algo.action_std                    # starting std for action distribution (Multivariate Normal)
-    action_std_decay_rate = cfg.algo.action_std_decay_rate        # linearly decay action_std (action_std = action_std - action_std_decay_rate)
-    min_action_std = cfg.algo.min_action_std                # minimum action_std (stop decay after action_std <= min_action_std)
-    action_std_decay_freq = cfg.algo.action_std_decay_freq  # action_std decay frequency (in num timesteps)
-    #####################################################
-
-    ## Note : print/log frequencies should be > than max_ep_len
-
-    ################ PPO hyperparameters ################
+    save_model_freq = cfg.algo.save_model_freq
+    action_std = cfg.algo.action_std            
+    action_std_decay_rate = cfg.algo.action_std_decay_rate       
+    min_action_std = cfg.algo.min_action_std        
+    action_std_decay_freq = cfg.algo.action_std_decay_freq 
     update_timestep = max_ep_len * 4      # update policy every n timesteps
-    K_epochs = cfg.algo.K_epochs               # update policy for K epochs in one PPO update
-
-    eps_clip = cfg.algo.eps_clip          # clip parameter for PPO
-    gamma = cfg.algo.gamma            # discount factor
-
-    lr_actor = cfg.algo.lr_actor       # learning rate for actor network
-    lr_critic = cfg.algo.lr_critic       # learning rate for critic network
-
-    random_seed = cfg.algo.random_seed         # set random seed if required (0 = no random seed)
+    K_epochs = cfg.algo.K_epochs             
+    eps_clip = cfg.algo.eps_clip        
+    gamma = cfg.algo.gamma       
+    lr_actor = cfg.algo.lr_actor      
+    lr_critic = cfg.algo.lr_critic     
+    random_seed = cfg.algo.random_seed       
 
     ################ Env setting #########################
-    # env = gym.make(env_name, cfg=cfg, render_mode="human")
+
     env = gym.make(env_name, cfg=cfg.env, render_mode=cfg.render_mode)
 
     # state space dimension
-    state_dim = env.observation_space[0].shape[0]
+    state_dim = env.observation_space[0].shape[0]   # choose the first agent's observation space
 
     # action space dimension
     if has_continuous_action_space:
-        action_dim = env.action_space[0].shape[0]
+        action_dim = env.action_space[0].shape[0]   # choose the first agent's action space
     else:
-        action_dim = env.action_space.n
+        action_dim = env.action_space[0].n
 
     ###################### logging ######################
     root_dir = "./result"
@@ -79,6 +66,7 @@ def train(cfg):
     if not os.path.exists(root_dir):
         os.makedirs(root_dir)
 
+    # tensorboard writer
     writer = SummaryWriter(log_dir=root_dir)
 
     # checkpoint path
@@ -116,6 +104,7 @@ def train(cfg):
     print("--------------------------------------------------------------------------------------------")
     print("optimizer learning rate actor : ", lr_actor)
     print("optimizer learning rate critic : ", lr_critic)
+    
     if random_seed:
         print("--------------------------------------------------------------------------------------------")
         print("setting random seed to ", random_seed)
@@ -129,14 +118,12 @@ def train(cfg):
     ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std)
 
     print("============================================================================================")
-
     # printing and logging variables
     print_running_reward = 0
     print_running_episodes = 0
 
     log_running_reward = 0
     log_running_episodes = 0
-
     time_step = 0
     i_episode = 0
 
@@ -144,18 +131,16 @@ def train(cfg):
     while time_step <= max_training_timesteps:
 
         state, _ = env.reset()
-        state = state[0]
         current_ep_reward = 0
 
         for t in range(1, max_ep_len+1):
 
-            # select action with policy
-            action_0 = ppo_agent.select_action(state)
+            # select action with policy, agent1的动作由ppo_agent选择，agent2的动作随机选择
+            action_0 = ppo_agent.select_action(state[0])
             action_1 = env.action_space.sample()[1]
             action = (action_0, action_1)
             state, reward, terminated, truncated, info = env.step(action)
 
-            state = state[0]
             reward = reward[0]
 
             # saving reward and is_terminals
@@ -198,7 +183,7 @@ def train(cfg):
 
                 print_running_reward = 0
                 print_running_episodes = 0
-
+                
             # save model weights
             if time_step % save_model_freq == 0:
                 ppo_agent.save(checkpoint_path)

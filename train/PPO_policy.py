@@ -86,7 +86,7 @@ class ActorCritic(nn.Module):
         raise NotImplementedError
     
     def act(self, state):
-
+        # TODO: 输出的动作必须要限定在ENV的动作范围内
         if self.has_continuous_action_space:
             action_mean = self.actor(state)
             cov_mat = torch.diag(self.action_var).unsqueeze(dim=0)
