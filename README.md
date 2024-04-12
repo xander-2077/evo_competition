@@ -2,9 +2,20 @@
 
 ### Additional Notion
 
-`train/` folder is some scipts for training algorithms.
-
+`train/` folder is some scipts for training algorithms. Now PPO is available. `SB3.py` is useless.
 `test/` folder is some scipts for test.
+
+Just run 
+
+```python
+python train/PPO_train.py
+# or enable the render mode
+python train/PPO_train.py render_mode=human 
+```
+
+to train PPO algorithm. You'll find `/result/env_name/TIME_algoname` folder which contains `config.yaml`, `events...` and `ppoagent.pth`. There are for config record, tensorboard and model saving, respectively.
+
+We use `hydra` to manage configs. Ref to https://hydra.cc/docs/intro/. `config/config.yaml` is the main config file.
 
 ---
 
