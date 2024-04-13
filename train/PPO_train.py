@@ -41,6 +41,7 @@ def train(cfg):
     ################ Env setting #########################
 
     env = gym.make(env_name, cfg=cfg.env, render_mode=cfg.render_mode)
+    import pdb; pdb.set_trace()
 
     # state space dimension
     state_dim = env.observation_space[0].shape[0]   # choose the first agent's observation space

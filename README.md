@@ -17,6 +17,13 @@ to train PPO algorithm. You'll find `/result/env_name/TIME_algoname` folder whic
 
 We use `hydra` to manage configs. Ref to https://hydra.cc/docs/intro/. `config/config.yaml` is the main config file.
 
+If you encounter `TypeError: reset() got an unexpected keyword argument 'seed'`, try to fix codes in `gymnasium/core.py", line 462`:
+
+```python
+# obs, info = self.env.reset(seed=seed, options=options)
+obs, info = self.env.reset()
+```
+
 ---
 
 The task is to evolve and train a pair of agents to compete with each other.
