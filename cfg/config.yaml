@@ -5,7 +5,9 @@ defaults:
   - env : robo-sumo-ants-v0
   - _self_
 
+
 hydra:
-  output_subdir: null
+  job:
+    chdir: true
   run:
-    dir: .
+    dir: ./result/${env}/${now:%m-%d_%H-%M}_${algo}_cleanrl/${hydra.job.override_dirname}

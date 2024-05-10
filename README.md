@@ -2,10 +2,12 @@
 
 ### Additional Notion
 
-`train/` folder is some scipts for training algorithms. Now PPO is available. `SB3.py` is useless.
+`train/` folder is some scipts for training algorithms. 
+Now `PPO-Pytorch/` is available. `StableBaselines3/` is useless.
+What we are promoting is `CleanRL/`.
 `test/` folder is some scipts for test.
 
-Just run 
+For `PPO-Pytorch/`, you can just run 
 
 ```python
 python train/PPO_train.py
@@ -13,7 +15,7 @@ python train/PPO_train.py
 python train/PPO_train.py render_mode=human 
 ```
 
-to train PPO algorithm. You'll find `/result/env_name/TIME_algoname` folder which contains `config.yaml`, `events...` and `ppoagent.pth`. There are for config record, tensorboard and model saving, respectively.
+to train PPO algorithm. You'll find `/runs/env_name/$TIME$_algoname` folder which contains `config.yaml`, `events...` and `ppoagent.pth`. There are for config record, tensorboard and model saving, respectively.
 
 We use `hydra` to manage configs. Ref to https://hydra.cc/docs/intro/. `config/config.yaml` is the main config file.
 

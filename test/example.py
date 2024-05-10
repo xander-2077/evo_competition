@@ -8,7 +8,7 @@ import gymnasium as gym
 from gymnasium import ObservationWrapper
 from gymnasium.wrappers import TransformObservation, TransformReward
 import numpy as np
-from config.env.config import Config
+from config.config import Config
 import argparse
 
 class SelectFirstObservationWrapper(ObservationWrapper):
