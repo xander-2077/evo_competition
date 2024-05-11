@@ -1,0 +1,38 @@
+# @package _global_
+algo_name: PPO_cleanrl    # PPO
+
+seed: 1
+torch_deterministic: True
+cuda: True
+track: True
+wandb_project_name: "evo-competition"
+wandb_entity: xander2077
+capture_video: False
+save_model: True
+upload_model: False
+hf_entity: ""
+
+# Algorithm specific arguments
+env_id: "robo-sumo-ants-v0"
+total_timesteps: 1000000
+learning_rate: 0.0003
+num_envs: 64  # Change this
+num_steps: 2048
+anneal_lr: True
+gamma: 0.99
+gae_lambda: 0.95
+num_minibatches: 32
+update_epochs: 10
+norm_adv: True
+clip_coef: 0.2
+clip_vloss: True
+ent_coef: 0.0
+vf_coef: 0.5
+max_grad_norm: 0.5
+target_kl: 
+
+# to be filled in runtime
+exp_name: ""
+batch_size: 0
+minibatch_size: 0
+num_iterations: 0

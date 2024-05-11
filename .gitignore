@@ -2,3 +2,5 @@
 *.pyc
 /runs
 *.log
+train/CleanRL/ppo_continuous_action.py
+test/example_bak.py

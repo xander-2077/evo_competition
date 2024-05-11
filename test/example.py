@@ -34,7 +34,6 @@ class FirstItemWrapper(gym.Wrapper):
         return state, reward, terminated, truncated, info[0]
 
 
-
 def str2bool(input_str):
     """Converts a string to a boolean value.
 
@@ -70,19 +69,15 @@ args = parser.parse_args()
 cfg = Config(args.cfg_file)
 
 env = gym.make(cfg.env_name, cfg=cfg, render_mode="human")
-# env = SelectFirstObservationWrapper(env)
-# env = TransformObservation(env, lambda obs: obs[0])
-# env = TransformReward(env, lambda reward: reward[0])
-# env = FirstItemWrapper(env)
-import pdb; pdb.set_trace()
-
 obs, _ = env.reset()
 
 for _ in range(10000):
-   action = env.action_space.sample()  # this is where you would insert your policy
-   observation, reward, terminated, truncated, info = env.step(action)
-   import pdb; pdb.set_trace()
+    action = env.action_space.sample()  # this is where you would insert your policy
+    # import pdb; pdb.set_trace()
+    observation, reward, terminated, truncated, info = env.step(action)
 
-   if any(terminated) or truncated:
+    import pdb; pdb.set_trace()
+
+    if any(terminated) or truncated:
       observation, info = env.reset()
 env.close()

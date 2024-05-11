@@ -37,17 +37,15 @@ def evaluate(
 
 
 if __name__ == "__main__":
-    from huggingface_hub import hf_hub_download
+    import sys
+    sys.path.append('/root/ws/')
+    from train.CleanRL.PPO_hydra import Agent, make_env
 
-    from cleanrl.ppo_continuous_action import Agent, make_env
-
-    model_path = hf_hub_download(
-        repo_id="sdpkjc/Hopper-v4-ppo_continuous_action-seed1", filename="ppo_continuous_action.cleanrl_model"
-    )
+    model_path = '/root/ws/runs/robo-sumo-ants-v0/05-11_14-56_PPO_cleanrl/runs/robo-sumo-ants-v0/05-11_14-56_PPO_cleanrl/PPO_cleanrl.cleanrl_model'
     evaluate(
         model_path,
         make_env,
-        "Hopper-v4",
+        "robo-sumo-ants-v0",
         eval_episodes=10,
         run_name=f"eval",
         Model=Agent,

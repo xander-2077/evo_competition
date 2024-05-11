@@ -1,0 +1,108 @@
+{
+    "os": "Linux-5.15.0-91-generic-x86_64-with-glibc2.29",
+    "python": "3.8.10",
+    "heartbeatAt": "2024-05-11T14:14:09.850507",
+    "startedAt": "2024-05-11T14:14:07.954345",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/root/ws/train/CleanRL/PPO_hydra.py",
+    "codePathLocal": "train/CleanRL/PPO_hydra.py",
+    "codePath": "train/CleanRL/PPO_hydra.py",
+    "git": {
+        "remote": "git@github.com:xander-2077/evo_competition.git",
+        "commit": "32938741cf0a1d577b55bc95fa6c9e879c10aca8"
+    },
+    "email": "zdj23@mails.tsinghua.edu.cn",
+    "root": "/root/ws",
+    "host": "42d9dbba7a1a",
+    "username": "root",
+    "executable": "/usr/bin/python3",
+    "cpu_count": 6,
+    "cpu_count_logical": 12,
+    "cpu_freq": {
+        "current": 2424.76875,
+        "min": 800.0,
+        "max": 4400.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2500.0,
+            "min": 800.0,
+            "max": 4400.0
+        },
+        {
+            "current": 800.016,
+            "min": 800.0,
+            "max": 4400.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 182.2811393737793,
+            "used": 51.44963836669922
+        }
+    },
+    "gpu": "NVIDIA GeForce RTX 3060",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce RTX 3060",
+            "memory_total": 12884901888
+        }
+    ],
+    "memory": {
+        "total": 15.450202941894531
+    }
+}

@@ -33,6 +33,7 @@ class MultiAgentScene(MujocoEnv, utils.EzPickle):
     def simulate(self, actions):
         if self.render_mode == "human":
             self.render()
+        # import pdb; pdb.set_trace()
         a = np.concatenate(actions, axis=0)
         self.do_simulation(a, self.frame_skip)
 

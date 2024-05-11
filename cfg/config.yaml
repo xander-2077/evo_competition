@@ -1,13 +1,17 @@
-render_mode: None   # None, human, rgb_array, rgb_array_float
-
 defaults:
-  - algo : PPO
-  - env : robo-sumo-ants-v0
+  - algo: PPO_cleanrl
+  - env: robo-sumo-ants-v0
   - _self_
 
+exp_name: ${algo_name}
+render_mode: None   # None, human, rgb_array, rgb_array_float
 
 hydra:
   job:
-    chdir: true
+    chdir: false
   run:
-    dir: ./result/${env}/${now:%m-%d_%H-%M}_${algo}_cleanrl/${hydra.job.override_dirname}
+    dir: ./runs/${env_name}/${now:%m-%d_%H-%M}_${algo_name}
+  # sweeper:
+  #   params:
+  #     db: mysql,postgresql
+  #     schema: warehouse,support,school

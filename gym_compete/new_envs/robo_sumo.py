@@ -165,6 +165,7 @@ class RoboSumoEnv(MultiAgentEnv):
     def step(self, actions):
         self._elapsed_steps += 1
         # actions = (actions[:8], actions[8:])  # split actions for each agent
+        # import pdb; pdb.set_trace()
         obses, rews, terminateds, truncated, infos = self._step(actions)
         if self._past_limit():
             return obses, rews, terminateds, True, infos

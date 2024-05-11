@@ -17,81 +17,10 @@ import sys
 sys.path.append('/root/ws')
 import competevo
 import gym_compete
-from gymnasium import ObservationWrapper, ActionWrapper
-from gymnasium.wrappers import TransformObservation, TransformReward
 import hydra
 from datetime import datetime
-import yaml
-from dataclasses import asdict
+from omegaconf import OmegaConf
 
-@dataclass
-class Args:
-    exp_name: str = os.path.basename(__file__)[: -len(".py")]
-    """the name of this experiment"""
-    seed: int = 1
-    """seed of the experiment"""
-    torch_deterministic: bool = True
-    """if toggled, `torch.backends.cudnn.deterministic=False`"""
-    cuda: bool = True
-    """if toggled, cuda will be enabled by default"""
-    track: bool = False
-    """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "cleanRL"
-    """the wandb's project name"""
-    wandb_entity: str = None
-    """the entity (team) of wandb's project"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder)"""
-    save_model: bool = True
-    """whether to save model into the `runs/{run_name}` folder"""
-    upload_model: bool = False
-    """whether to upload the saved model to huggingface"""
-    hf_entity: str = ""
-    """the user or org name of the model repository from the Hugging Face Hub"""
-
-    # Algorithm specific arguments
-    env_id: str = "robo-sumo-ants-v0"
-    """the id of the environment"""
-    total_timesteps: int = 1000000
-    """total timesteps of the experiments"""
-    learning_rate: float = 3e-4
-    """the learning rate of the optimizer"""
-    num_envs: int = 4  # Find me 
-    """the number of parallel game environments"""
-    num_steps: int = 2048
-    """the number of steps to run in each environment per policy rollout"""
-    anneal_lr: bool = True
-    """Toggle learning rate annealing for policy and value networks"""
-    gamma: float = 0.99
-    """the discount factor gamma"""
-    gae_lambda: float = 0.95
-    """the lambda for the general advantage estimation"""
-    num_minibatches: int = 32
-    """the number of mini-batches"""
-    update_epochs: int = 10
-    """the K epochs to update the policy"""
-    norm_adv: bool = True
-    """Toggles advantages normalization"""
-    clip_coef: float = 0.2
-    """the surrogate clipping coefficient"""
-    clip_vloss: bool = True
-    """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
-    ent_coef: float = 0.0
-    """coefficient of the entropy"""
-    vf_coef: float = 0.5
-    """coefficient of the value function"""
-    max_grad_norm: float = 0.5
-    """the maximum norm for the gradient clipping"""
-    target_kl: float = None
-    """the target KL divergence threshold"""
-
-    # to be filled in runtime
-    batch_size: int = 0
-    """the batch size (computed in runtime)"""
-    minibatch_size: int = 0
-    """the mini-batch size (computed in runtime)"""
-    num_iterations: int = 0
-    """the number of iterations (computed in runtime)"""
 
 class FirstItemWrapper(gym.Wrapper):
     def __init__(self, env):
@@ -111,13 +40,13 @@ class FirstItemWrapper(gym.Wrapper):
         return observation[0], _
 
 
-def make_env(env_id, idx, capture_video, run_name, gamma):
+def make_env(env_id, idx, capture_video, run_name, gamma, render_mode=None):
     def thunk():
         if capture_video and idx == 0:
-            env = gym.make(env_id, cfg={'use_parse_reward': True}, render_mode="rgb_array")
+            env = gym.make(env_id, cfg={'use_parse_reward': True}, render_mode=render_mode)
             env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         else:
-            env = gym.make(env_id, cfg={'use_parse_reward': True})
+            env = gym.make(env_id, cfg={'use_parse_reward': True}, render_mode=render_mode)
 
         env = FirstItemWrapper(env)
 
@@ -173,25 +102,22 @@ class Agent(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
-# @hydra.main(config_path="cfg", config_name="config", version_base="1.3")
-def main():
-    args = tyro.cli(Args)
-    args = Args
+@hydra.main(config_path="../../cfg", config_name="config", version_base="1.3")
+def main(args):
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"{datetime.now().strftime('%m-%d_%H-%M')}_{args.env_id}_{args.exp_name}_{args.seed}"
     if args.track:
-        import wandb  # noqa
-
+        import wandb
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
-            sync_tensorboard=True,
-            config=vars(args),
             name=run_name,
+            sync_tensorboard=True,
+            config=OmegaConf.to_container(args, resolve=True, enum_to_str=True),
             monitor_gym=True,
-            save_code=True,
+            save_code=False,
         )
 
     root_dir = "./runs" + '/' + args.env_id + '/'
@@ -200,11 +126,6 @@ def main():
     root_dir = root_dir + '/' + current_time + '_' + 'PPO_cleanrl' + '/'
     if not os.path.exists(root_dir): os.makedirs(root_dir)
 
-    args_dict = asdict(args)
-    with open(root_dir + '/config.yaml', 'w') as file:
-        yaml.dump(args_dict, file, sort_keys=False)
-    
-    import pdb; pdb.set_trace()
     writer = SummaryWriter(log_dir=root_dir)
     writer.add_text(
         "hyperparameters",
@@ -221,7 +142,7 @@ def main():
 
     # env setup
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
+        [make_env(args.env_id, i, args.capture_video, run_name, args.gamma, render_mode=args.render_mode) for i in range(args.num_envs)]
     )
 
     agent = Agent(envs).to(device)
