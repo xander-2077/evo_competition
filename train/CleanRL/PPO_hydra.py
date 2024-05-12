@@ -44,10 +44,10 @@ def make_env(env_id, idx, capture_video, run_name, gamma, render_mode=None):
     def thunk():
         if capture_video and idx == 0:
             env = gym.make(env_id, render_mode=render_mode)
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")  # TODO: change path
+            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         else:
-            env = gym.make(env_id, render_mode=render_mode)
-
+            env = gym.make(env_id, cfg={}, render_mode=render_mode)
+            
         env = FirstItemWrapper(env)
 
         # import pdb; pdb.set_trace()
