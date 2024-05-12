@@ -11,28 +11,6 @@ import numpy as np
 from config.config import Config
 import argparse
 
-class SelectFirstObservationWrapper(ObservationWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        # 假设原始env的observation_space是一个Tuple
-        # 我们只取Tuple中的第一个Box作为新的observation_space
-        self.observation_space = env.observation_space[0]
-
-    def step(self, observation):
-        # 从原始观测值Tuple中只选择第一个元素作为新的观测值
-        return observation[0]
-
-class FirstItemWrapper(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-    
-    def step(self, action):
-        # obs, reward, done, info = self.env.step(action)
-        state, reward, terminated, truncated, info = self.env.step(action)
-        terminated = any(terminated)
-        # 同样，只取第一项的数据
-        return state, reward, terminated, truncated, info[0]
-
 
 def str2bool(input_str):
     """Converts a string to a boolean value.
@@ -68,7 +46,13 @@ args = parser.parse_args()
 # Load config file
 cfg = Config(args.cfg_file)
 
-env = gym.make(cfg.env_name, cfg=cfg, render_mode="human")
+
+env = gym.make(cfg.env_name, cfg=cfg, render_mode="rgb_array")
+
+# import pdb; pdb.set_trace()
+# env.mujoco_renderer
+
+env = gym.wrappers.RecordVideo(env, f"videos")
 obs, _ = env.reset()
 
 for _ in range(10000):
@@ -76,7 +60,7 @@ for _ in range(10000):
     # import pdb; pdb.set_trace()
     observation, reward, terminated, truncated, info = env.step(action)
 
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
 
     if any(terminated) or truncated:
       observation, info = env.reset()

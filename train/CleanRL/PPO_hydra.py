@@ -43,10 +43,10 @@ class FirstItemWrapper(gym.Wrapper):
 def make_env(env_id, idx, capture_video, run_name, gamma, render_mode=None):
     def thunk():
         if capture_video and idx == 0:
-            env = gym.make(env_id, cfg={'use_parse_reward': True}, render_mode=render_mode)
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+            env = gym.make(env_id, render_mode=render_mode)
+            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")  # TODO: change path
         else:
-            env = gym.make(env_id, cfg={'use_parse_reward': True}, render_mode=render_mode)
+            env = gym.make(env_id, render_mode=render_mode)
 
         env = FirstItemWrapper(env)
 
@@ -120,13 +120,14 @@ def main(args):
             save_code=False,
         )
 
-    root_dir = "./runs" + '/' + args.env_id + '/'
-    if not os.path.exists(root_dir): os.makedirs(root_dir)
-    current_time = datetime.now().strftime('%m-%d_%H-%M')
-    root_dir = root_dir + '/' + current_time + '_' + 'PPO_cleanrl' + '/'
-    if not os.path.exists(root_dir): os.makedirs(root_dir)
+    # root_dir = "./runs" + '/' + args.env_id + '/'
+    # if not os.path.exists(root_dir): os.makedirs(root_dir)
+    # current_time = datetime.now().strftime('%m-%d_%H-%M')
+    # root_dir = root_dir + '/' + current_time + '_' + 'PPO_cleanrl' + '/'
+    # if not os.path.exists(root_dir): os.makedirs(root_dir)
+    # writer = SummaryWriter(log_dir=root_dir)
 
-    writer = SummaryWriter(log_dir=root_dir)
+    writer = SummaryWriter(log_dir='.')
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
@@ -291,7 +292,8 @@ def main(args):
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
     if args.save_model:
-        model_path = root_dir + f"{args.exp_name}.cleanrl_model"
+        # model_path = root_dir + f"{args.exp_name}.cleanrl_model"
+        model_path = f"{args.exp_name}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
         print(f"model saved to {model_path}")
 
@@ -310,7 +312,7 @@ def main(args):
         # for idx, episodic_return in enumerate(episodic_returns):
         #     writer.add_scalar("eval/episodic_return", episodic_return, idx)
 
-    envs.close()
+    envs.close()  # It seems that this method does not exist in the original code >_<
     writer.close()
 
 

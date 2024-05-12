@@ -16,7 +16,7 @@ hf_entity: ""
 env_id: "robo-sumo-ants-v0"
 total_timesteps: 1000000
 learning_rate: 0.0003
-num_envs: 64  # Change this
+num_envs: 64
 num_steps: 2048
 anneal_lr: True
 gamma: 0.99
@@ -29,7 +29,7 @@ clip_vloss: True
 ent_coef: 0.0
 vf_coef: 0.5
 max_grad_norm: 0.5
-target_kl: 
+target_kl:    # TODO:fill this
 
 # to be filled in runtime
 exp_name: ""

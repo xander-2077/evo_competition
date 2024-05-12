@@ -136,6 +136,24 @@ class MultiAgentEnv(MujocoEnv):
             else:
                 self.agents[i].set_goal(self.RIGHT_GOAL)
 
+        # super().__init__(self.env_scene.model, frame_skip=5, observation_space=None, **kwargs)
+    #     self.my_render()
+
+        
+    # def my_render(self):
+    #     from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
+    #     import mujoco
+    #     self.camera_id = 0
+    #     self.camera_name = "track"
+    #     model = mujoco.MjModel.from_xml_path(self._env_xml_path)
+    #     # model.vis.global_.offwidth = self.width
+    #     # model.vis.global_.offheight = self.height
+    #     data = mujoco.MjData(model)
+    #     default_camera_config = None
+    #     self.mujoco_renderer = MujocoRenderer(
+    #         model, data, default_camera_config
+    #     )
+
     def _past_limit(self):
         if self._max_episode_steps <= self._elapsed_steps:
             return True

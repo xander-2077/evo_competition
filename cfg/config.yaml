@@ -8,7 +8,7 @@ render_mode: None   # None, human, rgb_array, rgb_array_float
 
 hydra:
   job:
-    chdir: false
+    chdir: true
   run:
     dir: ./runs/${env_name}/${now:%m-%d_%H-%M}_${algo_name}
   # sweeper:

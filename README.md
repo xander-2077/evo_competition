@@ -15,9 +15,9 @@ python train/PPO_train.py
 python train/PPO_train.py render_mode=human 
 ```
 
-to train PPO algorithm. You'll find `/runs/env_name/$TIME$_algoname` folder which contains `config.yaml`, `events...` and `ppoagent.pth`. There are for config record, tensorboard and model saving, respectively.
+to train PPO algorithm. You'll find `/runs/env_name/$TIME$_$algoname$` folder which contains `config.yaml`, `events...` and `ppoagent.pth`. There are for config record, tensorboard and model saving, respectively.
 
-We use `hydra` to manage configs. Ref to https://hydra.cc/docs/intro/. `config/config.yaml` is the main config file.
+We use `hydra` to manage configs. Ref to https://hydra.cc/docs/intro/. `cfg/config.yaml` is the main config file.
 
 
 ## Environment INFO
@@ -48,7 +48,7 @@ We use `hydra` to manage configs. Ref to https://hydra.cc/docs/intro/. `config/c
 
     reward_dense = alive_reward + ctrl_reward + push_opp_reward + move_to_opp_reward
 
-    reward_parse = win_reward + win_reward
+    reward_parse = win_reward + lose_penalty
 
     reward = reward_dense + reward_parse
 
