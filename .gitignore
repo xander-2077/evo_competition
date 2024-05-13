@@ -6,3 +6,4 @@ train/CleanRL/ppo_continuous_action.py
 test/example_bak.py
 /wandb
 *.xml
+/multirun
