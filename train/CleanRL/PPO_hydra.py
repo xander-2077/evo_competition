@@ -107,7 +107,7 @@ def main(args):
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
-    run_name = f"{datetime.now().strftime('%m-%d_%H-%M')}_{args.env_id}_{args.exp_name}_{args.seed}"
+    run_name = f"{datetime.now().strftime('%m-%d_%H-%M')}_{args.exp_name}_{args.seed}"
     if args.track:
         import wandb
         wandb.init(

@@ -7,6 +7,7 @@ cuda: True
 track: True
 wandb_project_name: "evo-competition"
 wandb_entity: 计算智能及机器人学
+wandb_group: ${env_id}
 capture_video: False
 save_model: True
 upload_model: False
