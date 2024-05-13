@@ -4,7 +4,7 @@ algo_name: PPO_cleanrl    # PPO
 seed: 1
 torch_deterministic: True
 cuda: True
-track: True
+track: False
 wandb_project_name: "evo-competition"
 wandb_entity: 计算智能及机器人学
 capture_video: False
