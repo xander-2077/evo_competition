@@ -30,7 +30,6 @@ class FirstItemWrapper(gym.Wrapper):
     
     def step(self, action):
         # TODO: add opponent action
-        # import pdb; pdb.set_trace()
         action = (action, np.zeros_like(action))
         observation, reward, terminated, truncated, info = self.env.step(action)
         return observation[0], reward[0], any(terminated), truncated, info[0]
@@ -42,15 +41,9 @@ class FirstItemWrapper(gym.Wrapper):
 
 def make_env(env_id, idx, capture_video, run_name, gamma, render_mode=None):
     def thunk():
-        if capture_video and idx == 0:
-            env = gym.make(env_id, render_mode=render_mode)
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        else:
-            env = gym.make(env_id, cfg={}, render_mode=render_mode)
+        env = gym.make(env_id, cfg={}, render_mode=render_mode)
             
         env = FirstItemWrapper(env)
-
-        # import pdb; pdb.set_trace()
 
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
@@ -102,23 +95,31 @@ class Agent(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
+
 @hydra.main(config_path="../../cfg", config_name="config", version_base="1.3")
 def main(args):
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
+
+    print("batch_size: ", args.batch_size)
+    print("minibatch_size: ", args.minibatch_size)
+    print("num_iterations: ", args.num_iterations)
+    
+    import pdb; pdb.set_trace()
+
     run_name = f"{datetime.now().strftime('%m-%d_%H-%M')}_{args.exp_name}_{args.seed}"
-    if args.track:
-        import wandb
-        wandb.init(
-            project=args.wandb_project_name,
-            entity=args.wandb_entity,
-            name=run_name,
-            sync_tensorboard=True,
-            config=OmegaConf.to_container(args, resolve=True, enum_to_str=True),
-            monitor_gym=True,
-            save_code=False,
-        )
+    # if args.track:
+    #     import wandb
+    #     wandb.init(
+    #         project=args.wandb_project_name,
+    #         entity=args.wandb_entity,
+    #         name=run_name,
+    #         sync_tensorboard=True,
+    #         config=OmegaConf.to_container(args, resolve=True, enum_to_str=True),
+    #         monitor_gym=True,
+    #         save_code=False,
+    #     )
 
     # root_dir = "./runs" + '/' + args.env_id + '/'
     # if not os.path.exists(root_dir): os.makedirs(root_dir)
@@ -159,6 +160,7 @@ def main(args):
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
+    alpha = 1.0
     start_time = time.time()
     # next_obs, _ = envs.reset(seed=args.seed)
     next_obs, _ = envs.reset()
@@ -171,7 +173,9 @@ def main(args):
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
-
+        
+        alpha = 1.0-iteration/args.iteration_alpha_anneal if iteration < args.iteration_alpha_anneal else 0.0
+        
         for step in range(0, args.num_steps):
             global_step += args.num_envs
             obs[step] = next_obs
@@ -186,6 +190,8 @@ def main(args):
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
+            # Curriculum learning
+            reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]
             next_done = np.logical_or(terminations, truncations)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
@@ -194,6 +200,7 @@ def main(args):
                 for info in infos["final_info"]:
                     if info and "episode" in info:
                         print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
+                        # import pdb; pdb.set_trace()
                         writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
@@ -291,28 +298,28 @@ def main(args):
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-    if args.save_model:
-        # model_path = root_dir + f"{args.exp_name}.cleanrl_model"
-        model_path = f"{args.exp_name}.cleanrl_model"
-        torch.save(agent.state_dict(), model_path)
-        print(f"model saved to {model_path}")
+        if args.save_model and iteration % args.save_model_interval == 0:
+            # model_path = root_dir + f"{args.exp_name}.cleanrl_model"
+            model_path = f"agent_iter_{iteration}.pth"
+            torch.save(agent.state_dict(), model_path)
+            print(f"model saved to {model_path}")
 
-        # from eval.ppo_eval_cleanrl import evaluate
+            # from eval.ppo_eval_cleanrl import evaluate
 
-        # episodic_returns = evaluate(
-        #     model_path,
-        #     make_env,
-        #     args.env_id,
-        #     eval_episodes=10,
-        #     run_name=f"{run_name}-eval",
-        #     Model=Agent,
-        #     device=device,
-        #     gamma=args.gamma,
-        # )
-        # for idx, episodic_return in enumerate(episodic_returns):
-        #     writer.add_scalar("eval/episodic_return", episodic_return, idx)
+            # episodic_returns = evaluate(
+            #     model_path,
+            #     make_env,
+            #     args.env_id,
+            #     eval_episodes=10,
+            #     run_name=f"{run_name}-eval",
+            #     Model=Agent,
+            #     device=device,
+            #     gamma=args.gamma,
+            # )
+            # for idx, episodic_return in enumerate(episodic_returns):
+            #     writer.add_scalar("eval/episodic_return", episodic_return, idx)
 
-    envs.close()  # It seems that this method does not exist in the original code >_<
+    # envs.close()  # It seems that this method does not exist in the original code >_<
     writer.close()
 
 
