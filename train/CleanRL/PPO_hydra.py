@@ -20,6 +20,7 @@ import gym_compete
 import hydra
 from datetime import datetime
 from omegaconf import OmegaConf
+from pprint import pprint
 
 
 class FirstItemWrapper(gym.Wrapper):
@@ -32,6 +33,7 @@ class FirstItemWrapper(gym.Wrapper):
         # TODO: add opponent action
         action = (action, np.zeros_like(action))
         observation, reward, terminated, truncated, info = self.env.step(action)
+        # import pdb; pdb.set_trace()
         return observation[0], reward[0], any(terminated), truncated, info[0]
     
     def reset(self):
@@ -174,7 +176,10 @@ def main(args):
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
         
+        victories = 0
+        episode_in_iteration = 0
         alpha = 1.0-iteration/args.iteration_alpha_anneal if iteration < args.iteration_alpha_anneal else 0.0
+        writer.add_scalar("charts/alpha", alpha, global_step)
         
         for step in range(0, args.num_steps):
             global_step += args.num_envs
@@ -200,9 +205,11 @@ def main(args):
                 for info in infos["final_info"]:
                     if info and "episode" in info:
                         print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-                        # import pdb; pdb.set_trace()
                         writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+
+                        episode_in_iteration += 1
+                        if info['win_reward'] > 0: victories += 1
 
         # bootstrap value if not done
         with torch.no_grad():
@@ -286,6 +293,7 @@ def main(args):
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
+        writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
