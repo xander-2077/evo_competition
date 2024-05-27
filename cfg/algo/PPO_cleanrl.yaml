@@ -17,8 +17,8 @@ hf_entity: ""
 env_id: "robo-sumo-ants-v0"
 total_timesteps: 2000000000
 learning_rate: 0.001
-num_envs: 800
-num_steps: 500  # 2048
+num_envs: 1600  # 409600/num_steps 1600
+num_steps: 256  # 128, 256, 512
 anneal_lr: True
 gamma: 0.995
 gae_lambda: 0.95
@@ -27,10 +27,10 @@ update_epochs: 6
 norm_adv: True
 clip_coef: 0.2
 clip_vloss: True
-ent_coef: 0.0
+ent_coef: 0.01
 vf_coef: 0.5
 max_grad_norm: 0.5
-target_kl: 1.0    # TODO:fill this
+target_kl: 0.0
 
 # to be filled in runtime
 exp_name: ""
@@ -38,5 +38,5 @@ batch_size: 0
 minibatch_size: 0
 num_iterations: 0
 
-save_model_interval: 500
+save_model_interval: 100
 iteration_alpha_anneal: 500
