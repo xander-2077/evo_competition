@@ -111,17 +111,6 @@ def main(args):
     import pdb; pdb.set_trace()
 
     run_name = f"{datetime.now().strftime('%m-%d_%H-%M')}_{args.exp_name}_{args.seed}"
-    # if args.track:
-    #     import wandb
-    #     wandb.init(
-    #         project=args.wandb_project_name,
-    #         entity=args.wandb_entity,
-    #         name=run_name,
-    #         sync_tensorboard=True,
-    #         config=OmegaConf.to_container(args, resolve=True, enum_to_str=True),
-    #         monitor_gym=True,
-    #         save_code=False,
-    #     )
 
     # root_dir = "./runs" + '/' + args.env_id + '/'
     # if not os.path.exists(root_dir): os.makedirs(root_dir)
@@ -177,6 +166,7 @@ def main(args):
             optimizer.param_groups[0]["lr"] = lrnow
         
         victories = 0
+        defeats = 0
         episode_in_iteration = 0
         alpha = 1.0-iteration/args.iteration_alpha_anneal if iteration < args.iteration_alpha_anneal else 0.0
         writer.add_scalar("charts/alpha", alpha, global_step)
@@ -210,6 +200,7 @@ def main(args):
 
                         episode_in_iteration += 1
                         if info['win_reward'] > 0: victories += 1
+                        if info['lose_penalty'] < 0: defeats += 1
 
         # bootstrap value if not done
         with torch.no_grad():
@@ -294,6 +285,7 @@ def main(args):
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
         writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
+        writer.add_scalar("charts/loss_rate", defeats/episode_in_iteration, iteration)
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)

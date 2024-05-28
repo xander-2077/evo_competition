@@ -19,7 +19,7 @@ total_timesteps: 2000000000
 learning_rate: 0.001
 num_envs: 1600  # 409600/num_steps 1600
 num_steps: 256  # 128, 256, 512
-anneal_lr: True
+anneal_lr: False
 gamma: 0.995
 gae_lambda: 0.95
 num_minibatches: 64
@@ -38,5 +38,5 @@ batch_size: 0
 minibatch_size: 0
 num_iterations: 0
 
-save_model_interval: 100
+save_model_interval: 10
 iteration_alpha_anneal: 500
