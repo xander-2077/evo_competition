@@ -27,7 +27,7 @@ update_epochs: 6
 norm_adv: True
 clip_coef: 0.2
 clip_vloss: True
-ent_coef: 0.01
+ent_coef: 0.0 # 0.1
 vf_coef: 0.5
 max_grad_norm: 0.5
 target_kl: 0.0
