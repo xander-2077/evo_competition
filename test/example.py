@@ -5,12 +5,10 @@ import competevo
 import gym_compete
 
 import gymnasium as gym
-from gymnasium import ObservationWrapper
-from gymnasium.wrappers import TransformObservation, TransformReward
-import numpy as np
 from config.config import Config
 import argparse
 
+from time import time
 
 def str2bool(input_str):
     """Converts a string to a boolean value.
@@ -40,28 +38,23 @@ parser.add_argument("--cfg",
                     type=str)
 parser.add_argument('--use_cuda', type=str2bool, default=True)
 parser.add_argument('--gpu_index', type=int, default=0)
-parser.add_argument('--num_threads', type=int, default=1)
+parser.add_argument('--num_threads', type=int, default=72)
 parser.add_argument('--epoch', type=str, default='0')
 args = parser.parse_args()
 # Load config file
 cfg = Config(args.cfg_file)
 
-
-env = gym.make(cfg.env_name, cfg=cfg, render_mode="rgb_array")
-
-# import pdb; pdb.set_trace()
-# env.mujoco_renderer
-
-env = gym.wrappers.RecordVideo(env, f"videos")
+# env = gym.make(cfg.env_name, cfg=cfg, render_mode="human")
+env = gym.make(cfg.env_name, cfg=cfg)
 obs, _ = env.reset()
 
 for _ in range(10000):
-    action = env.action_space.sample()  # this is where you would insert your policy
-    # import pdb; pdb.set_trace()
-    observation, reward, terminated, truncated, info = env.step(action)
+   action = env.action_space.sample()  # this is where you would insert your policy
+   start_time = time()
+   observation, reward, terminated, truncated, info = env.step(action)
+   end_time = time()
+   print(end_time-start_time)
 
-    # import pdb; pdb.set_trace()
-
-    if any(terminated) or truncated:
+   if any(terminated) or truncated:
       observation, info = env.reset()
 env.close()

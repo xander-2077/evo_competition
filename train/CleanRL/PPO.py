@@ -13,16 +13,6 @@ import tyro
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 
-import sys
-sys.path.append('/root/ws')
-import competevo
-import gym_compete
-from gymnasium import ObservationWrapper, ActionWrapper
-from gymnasium.wrappers import TransformObservation, TransformReward
-import hydra
-from datetime import datetime
-import yaml
-from dataclasses import asdict
 
 @dataclass
 class Args:
@@ -42,7 +32,7 @@ class Args:
     """the entity (team) of wandb's project"""
     capture_video: bool = False
     """whether to capture videos of the agent performances (check out `videos` folder)"""
-    save_model: bool = True
+    save_model: bool = False
     """whether to save model into the `runs/{run_name}` folder"""
     upload_model: bool = False
     """whether to upload the saved model to huggingface"""
@@ -50,13 +40,13 @@ class Args:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str = "robo-sumo-ants-v0"
+    env_id: str = "HalfCheetah-v4"
     """the id of the environment"""
     total_timesteps: int = 1000000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4
     """the learning rate of the optimizer"""
-    num_envs: int = 4  # Find me 
+    num_envs: int = 1
     """the number of parallel game environments"""
     num_steps: int = 2048
     """the number of steps to run in each environment per policy rollout"""
@@ -93,36 +83,14 @@ class Args:
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
 
-class FirstItemWrapper(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.env.observation_space = env.observation_space[0]
-        self.env.action_space = env.action_space[0]
-    
-    def step(self, action):
-        # TODO: add opponent action
-        # import pdb; pdb.set_trace()
-        action = (action, np.zeros_like(action))
-        observation, reward, terminated, truncated, info = self.env.step(action)
-        return observation[0], reward[0], any(terminated), truncated, info[0]
-    
-    def reset(self):
-        observation, _ = self.env.reset()
-        return observation[0], _
-
 
 def make_env(env_id, idx, capture_video, run_name, gamma):
     def thunk():
         if capture_video and idx == 0:
-            env = gym.make(env_id, cfg={'use_parse_reward': True}, render_mode="rgb_array")
+            env = gym.make(env_id, render_mode="rgb_array")
             env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         else:
-            env = gym.make(env_id, cfg={'use_parse_reward': True})
-
-        env = FirstItemWrapper(env)
-
-        # import pdb; pdb.set_trace()
-
+            env = gym.make(env_id)
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
@@ -130,7 +98,6 @@ def make_env(env_id, idx, capture_video, run_name, gamma):
         env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         env = gym.wrappers.NormalizeReward(env, gamma=gamma)
         env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        
         return env
 
     return thunk
@@ -173,16 +140,15 @@ class Agent(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
-# @hydra.main(config_path="cfg", config_name="config", version_base="1.3")
-def main():
+
+if __name__ == "__main__":
     args = tyro.cli(Args)
-    args = Args
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
-        import wandb  # noqa
+        import wandb
 
         wandb.init(
             project=args.wandb_project_name,
@@ -193,19 +159,7 @@ def main():
             monitor_gym=True,
             save_code=True,
         )
-
-    root_dir = "./runs" + '/' + args.env_id + '/'
-    if not os.path.exists(root_dir): os.makedirs(root_dir)
-    current_time = datetime.now().strftime('%m-%d_%H-%M')
-    root_dir = root_dir + '/' + current_time + '_' + 'PPO_cleanrl' + '/'
-    if not os.path.exists(root_dir): os.makedirs(root_dir)
-
-    args_dict = asdict(args)
-    with open(root_dir + '/config.yaml', 'w') as file:
-        yaml.dump(args_dict, file, sort_keys=False)
-    
-    import pdb; pdb.set_trace()
-    writer = SummaryWriter(log_dir=root_dir)
+    writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
@@ -223,6 +177,7 @@ def main():
     envs = gym.vector.SyncVectorEnv(
         [make_env(args.env_id, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
     )
+    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
@@ -238,8 +193,7 @@ def main():
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
-    # next_obs, _ = envs.reset(seed=args.seed)
-    next_obs, _ = envs.reset()
+    next_obs, _ = envs.reset(seed=args.seed)
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
 
@@ -370,28 +324,30 @@ def main():
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
     if args.save_model:
-        model_path = root_dir + f"{args.exp_name}.cleanrl_model"
+        model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
         print(f"model saved to {model_path}")
+        from cleanrl_utils.evals.ppo_eval import evaluate
 
-        # from eval.ppo_eval_cleanrl import evaluate
+        episodic_returns = evaluate(
+            model_path,
+            make_env,
+            args.env_id,
+            eval_episodes=10,
+            run_name=f"{run_name}-eval",
+            Model=Agent,
+            device=device,
+            gamma=args.gamma,
+        )
+        for idx, episodic_return in enumerate(episodic_returns):
+            writer.add_scalar("eval/episodic_return", episodic_return, idx)
 
-        # episodic_returns = evaluate(
-        #     model_path,
-        #     make_env,
-        #     args.env_id,
-        #     eval_episodes=10,
-        #     run_name=f"{run_name}-eval",
-        #     Model=Agent,
-        #     device=device,
-        #     gamma=args.gamma,
-        # )
-        # for idx, episodic_return in enumerate(episodic_returns):
-        #     writer.add_scalar("eval/episodic_return", episodic_return, idx)
+        if args.upload_model:
+            from cleanrl_utils.huggingface import push_to_hub
+
+            repo_name = f"{args.env_id}-{args.exp_name}-seed{args.seed}"
+            repo_id = f"{args.hf_entity}/{repo_name}" if args.hf_entity else repo_name
+            push_to_hub(args, episodic_returns, repo_id, "PPO", f"runs/{run_name}", f"videos/{run_name}-eval")
 
     envs.close()
     writer.close()
-
-
-if __name__ == "__main__":
-    main()
