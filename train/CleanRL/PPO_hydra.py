@@ -45,7 +45,6 @@ def make_env(env_id, cfg, gamma, render_mode=None):
         env = gym.make(env_id, cfg=cfg, render_mode=render_mode)
             
         env = FirstItemWrapper(env)
-
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
@@ -101,12 +100,14 @@ def main(args):
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
+    args.iteration_alpha_anneal = int(args.num_iterations * 0.15)
 
     print("batch_size: ", args.batch_size)
     print("minibatch_size: ", args.minibatch_size)
     print("num_iterations: ", args.num_iterations)
+    print("iteration_alpha_anneal: ", args.iteration_alpha_anneal)
     
-    import pdb; pdb.set_trace()
+    input()  # Press any key to continue!
 
     writer = SummaryWriter(log_dir='.')
     writer.add_text(
@@ -127,7 +128,6 @@ def main(args):
     parser.add_argument("--cfg", 
                     dest="cfg_file", 
                     help="Config file", 
-                    # required=True, 
                     default='/root/ws/config/robo-sumo-ants-v0.yaml',
                     type=str)
     parser.add_argument('--use_cuda', type=str2bool, default=True)
@@ -189,8 +189,7 @@ def main(args):
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-            # Curriculum learning
-            reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]
+            reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]  # Curriculum learning
             next_done = np.logical_or(terminations, truncations)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
@@ -203,8 +202,12 @@ def main(args):
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
                         episode_in_iteration += 1
-                        if info['win_reward'] > 0: victories += 1
-                        if info['lose_penalty'] < 0: defeats += 1
+                        if info['win_reward'] > 0: 
+                            victories += 1
+                            # print(f"win! win_rew: {info['win_reward']}, reward: {reward}")
+                        if info['lose_penalty'] < 0: 
+                            defeats += 1
+                            # print(f"lose! lose_rew: {info['lose_penalty']}, reward: {reward}")
 
         # bootstrap value if not done
         with torch.no_grad():
@@ -291,6 +294,7 @@ def main(args):
         if episode_in_iteration > 0:
             writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
             writer.add_scalar("charts/loss_rate", defeats/episode_in_iteration, iteration)
+
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
