@@ -144,7 +144,7 @@ def main(args):
 
     # Agent
     agent0 = Agent(envs).to(device)
-    optimizer0 = optim.Adam(agent0.parameters(), lr=args.learning_rate, eps=1e-5)  
+    optimizer0 = optim.Adam(agent0.parameters(), lr=args.learning_rate, eps=1e-5)
     agent1 = Agent(envs).to(device)
     optimizer1 = optim.Adam(agent1.parameters(), lr=args.learning_rate, eps=1e-5)
 
@@ -152,48 +152,62 @@ def main(args):
     optimizers = [optimizer0, optimizer1]
 
     # ALGO Logic: Storage setup
-    obs0 = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions0 = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
-    logprobs0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    rewards0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    dones0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    values0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    # obs0 = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
+    # actions0 = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    # logprobs0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    # rewards0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    # dones0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    # values0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
     
-    obs1 = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions1 = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
-    logprobs1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    rewards1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    dones1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    values1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    # obs1 = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
+    # actions1 = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    # logprobs1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    # rewards1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    # dones1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    # values1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
     
-    obs_buffer = [obs0, obs1]
-    actions_buffer = [actions0, actions1]
-    logprobs_buffer = [logprobs0, logprobs1]
-    rewards_buffer = [rewards0, rewards1]
-    dones_buffer = [dones0, dones1]
-    values_buffer = [values0, values1]
+    # obs_buffer = [obs0, obs1]
+    # actions_buffer = [actions0, actions1]
+    # logprobs_buffer = [logprobs0, logprobs1]
+    # rewards_buffer = [rewards0, rewards1]
+    # dones_buffer = [dones0, dones1]
+    # values_buffer = [values0, values1]
+
+    obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
+    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+
+    obs_buffer = [obs, obs.clone()]
+    actions_buffer = [actions, actions.clone()]
+    logprobs_buffer = [logprobs, logprobs.clone()]
+    rewards_buffer = [rewards, rewards.clone()]
+    dones_buffer = [dones, dones.clone()]
+    values_buffer = [values, values.clone()]
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     alpha = 1.0
     start_time = time.time()
-    # TODO:
-    next_obs, _ = envs.reset()
-    next_obs = torch.Tensor(next_obs).to(device)
-    next_done = torch.zeros(args.num_envs).to(device)
 
-    for iteration in range(1, args.num_iterations + 1):
-        # Annealing the rate if instructed to do so.
-        if args.anneal_lr:
-            frac = 1.0 - (iteration - 1.0) / args.num_iterations
-            lrnow = frac * args.learning_rate
-            for idx in range(2): 
-                optimizers[idx].param_groups[0]["lr"] = lrnow
-        
+    for iteration in range(1, args.num_iterations + 1): 
         alpha = 1.0 - iteration / args.iteration_alpha_anneal if iteration < args.iteration_alpha_anneal else 0.0
         writer.add_scalar("charts/alpha", alpha, global_step)
         
         for idx in range(2):
+            if iteration == 1:
+                next_obs, _ = envs.reset()
+                next_obs = torch.Tensor(next_obs).to(device)
+                next_done = torch.zeros(args.num_envs).to(device)
+
+            # Annealing the rate if instructed to do so.
+            if args.anneal_lr:
+                frac = 1.0 - (iteration - 1.0) / args.num_iterations
+                lrnow = frac * args.learning_rate   
+                optimizers[idx].param_groups[0]["lr"] = lrnow
+
             victories = 0
             defeats = 0
             episode_in_iteration = 0
@@ -206,6 +220,7 @@ def main(args):
                 # ALGO LOGIC: action logic
                 with torch.no_grad():
                     action, logprob, _, value = agents[idx].get_action_and_value(next_obs)
+                    opponent_action, _, _, _ = agents[1-idx].get_action_and_value(next_obs)
                     values_buffer[idx][step] = value.flatten()
                 actions_buffer[idx][step] = action
                 logprobs_buffer[idx][step] = logprob
@@ -234,7 +249,7 @@ def main(args):
 
         # bootstrap value if not done
         with torch.no_grad():
-            next_value = agent.get_value(next_obs).reshape(1, -1)
+            next_value = agents[idx].get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
             for t in reversed(range(args.num_steps)):
@@ -265,7 +280,7 @@ def main(args):
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
+                _, newlogprob, entropy, newvalue = agents[idx].get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
@@ -302,10 +317,10 @@ def main(args):
                 entropy_loss = entropy.mean()
                 loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
 
-                optimizer.zero_grad()
+                optimizers[idx].zero_grad()
                 loss.backward()
-                nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-                optimizer.step()
+                nn.utils.clip_grad_norm_(agents[idx].parameters(), args.max_grad_norm)
+                optimizers[idx].step()
 
             if args.target_kl is not None and approx_kl > args.target_kl:
                 break
@@ -315,25 +330,25 @@ def main(args):
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
         if episode_in_iteration > 0:
-            writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
-            writer.add_scalar("charts/loss_rate", defeats/episode_in_iteration, iteration)
-            writer.add_scalar("charts/num_episode_per_iteration", episode_in_iteration, iteration)
+            writer.add_scalar(f"agent{idx}/success_rate", victories/episode_in_iteration, iteration)
+            writer.add_scalar(f"agent{idx}/loss_rate", defeats/episode_in_iteration, iteration)
+            writer.add_scalar(f"agent{idx}/num_episode_per_iteration", episode_in_iteration, iteration)
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
-        writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
-        writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-        writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
-        writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
-        writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
-        writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
-        writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
-        writer.add_scalar("losses/explained_variance", explained_var, global_step)
+        writer.add_scalar("charts/learning_rate", optimizers[idx].param_groups[0]["lr"], global_step)
+        writer.add_scalar(f"agent{idx}/value_loss", v_loss.item(), global_step)
+        writer.add_scalar(f"agent{idx}/policy_loss", pg_loss.item(), global_step)
+        writer.add_scalar(f"agent{idx}/entropy", entropy_loss.item(), global_step)
+        writer.add_scalar(f"agent{idx}/old_approx_kl", old_approx_kl.item(), global_step)
+        writer.add_scalar(f"agent{idx}/approx_kl", approx_kl.item(), global_step)
+        writer.add_scalar(f"agent{idx}/clipfrac", np.mean(clipfracs), global_step)
+        writer.add_scalar(f"agent{idx}/explained_variance", explained_var, global_step)
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
         if args.save_model and iteration % args.save_model_interval == 0:
-            model_path = f"agent_iter_{iteration}.pth"
-            torch.save(agent.state_dict(), model_path)
+            model_path = f"agent{idx}_iter_{iteration}.pth"
+            torch.save(agents[idx].state_dict(), model_path)
             print(f"model saved to {model_path}")
 
     writer.close()

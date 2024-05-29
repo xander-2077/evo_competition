@@ -26,14 +26,15 @@ class FirstItemWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         self.env.observation_space = env.observation_space[0]
-        self.env.action_space = env.action_space[0]
+        self.env.action_space = gym.spaces.Box(-1.0, 1.0, (16,), np.float32)
     
-    def step(self, action):
-        # TODO: add opponent action
+    def step(self, actions):
         # import pdb; pdb.set_trace()
-        action = (action, np.zeros_like(action))
+        num_actions = actions.shape[-1] // 2
+        action_self = actions[:num_actions]
+        action_opponent = actions[num_actions:]
+        action = (action_self, action_opponent)
         observation, reward, terminated, truncated, info = self.env.step(action)
-        # import pdb; pdb.set_trace()
         return observation[0], reward[0], any(terminated), truncated, info[0]
     
     def reset(self):
@@ -79,9 +80,9 @@ class Agent(nn.Module):
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, np.prod(envs.single_action_space.shape)), std=0.01),
+            layer_init(nn.Linear(64, np.prod(gym.spaces.Box(-1.0, 1.0, (8,), np.float32).shape)), std=0.01),
         )
-        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
+        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(gym.spaces.Box(-1.0, 1.0, (8,), np.float32).shape)))
 
     def get_value(self, x):
         return self.critic(x)
@@ -96,7 +97,7 @@ class Agent(nn.Module):
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
 
-@hydra.main(config_path="../../cfg", config_name="PPO_cleanrl", version_base="1.3")
+@hydra.main(config_path="../../cfg", config_name="PPO_HSP", version_base="1.3")
 def main(args):
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
@@ -142,13 +143,15 @@ def main(args):
     envs = gym.vector.SyncVectorEnv(
         [make_env(args.env_id, cfg, args.gamma, render_mode=args.render_mode) for _ in range(args.num_envs)]
     )
-    # import pdb; pdb.set_trace()
+
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
+    agent_opponent = Agent(envs).to(device)
+
     # ALGO Logic: Storage setup
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    actions = torch.zeros((args.num_steps, args.num_envs) + gym.spaces.Box(-1.0, 1.0, (8,), np.float32).shape).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -157,8 +160,8 @@ def main(args):
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     alpha = 1.0
+    best_win_rate = 0.0
     start_time = time.time()
-    # next_obs, _ = envs.reset(seed=args.seed)
     next_obs, _ = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
@@ -188,10 +191,20 @@ def main(args):
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
-            # import pdb; pdb.set_trace()
 
+            if best_win_rate == 0.0:
+                action_opponent = np.zeros_like(action.cpu().numpy())
+            else:
+                agent_opponent.load_state_dict(torch.load("agent_best.pth"))
+                agent_opponent.eval()
+                with torch.no_grad():
+                    action_opponent, _, _, _ = agent_opponent.get_action_and_value(next_obs)
+                action_opponent = action_opponent.cpu().numpy()
+            
+            # import pdb; pdb.set_trace()
             # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
+            action = np.concatenate((action.cpu().numpy(), action_opponent), axis=-1)
+            next_obs, reward, terminations, truncations, infos = envs.step(action)
             reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]  # Curriculum learning
             next_done = np.logical_or(terminations, truncations)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
@@ -207,10 +220,20 @@ def main(args):
                         episode_in_iteration += 1
                         if info['win_reward'] > 0: 
                             victories += 1
-                            # print(f"win! win_rew: {info['win_reward']}, reward: {reward}")
                         if info['lose_penalty'] < 0: 
                             defeats += 1
-                            # print(f"lose! lose_rew: {info['lose_penalty']}, reward: {reward}")
+
+        if episode_in_iteration > 0:
+            writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
+            writer.add_scalar("charts/loss_rate", defeats/episode_in_iteration, iteration)
+            writer.add_scalar("charts/num_episode_per_iteration", episode_in_iteration, iteration)
+
+            if best_win_rate < victories/episode_in_iteration:
+                best_win_rate = victories/episode_in_iteration
+                print(f"Best win rate updated: {best_win_rate} at iteration {iteration}")
+                model_path = f"agent_best.pth"
+                torch.save(agent.state_dict(), model_path)
+                print(f"model saved to {model_path}")
 
         # bootstrap value if not done
         with torch.no_grad():
@@ -231,7 +254,7 @@ def main(args):
         # flatten the batch
         b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
         b_logprobs = logprobs.reshape(-1)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
+        b_actions = actions.reshape((-1,) + gym.spaces.Box(-1.0, 1.0, (8,), np.float32).shape)
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values.reshape(-1)
@@ -293,11 +316,6 @@ def main(args):
         y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
-
-        if episode_in_iteration > 0:
-            writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
-            writer.add_scalar("charts/loss_rate", defeats/episode_in_iteration, iteration)
-            writer.add_scalar("charts/num_episode_per_iteration", episode_in_iteration, iteration)
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
