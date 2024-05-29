@@ -30,6 +30,7 @@ class FirstItemWrapper(gym.Wrapper):
     
     def step(self, action):
         # TODO: add opponent action
+        # import pdb; pdb.set_trace()
         action = (action, np.zeros_like(action))
         observation, reward, terminated, truncated, info = self.env.step(action)
         # import pdb; pdb.set_trace()
@@ -295,6 +296,7 @@ def main(args):
         if episode_in_iteration > 0:
             writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
             writer.add_scalar("charts/loss_rate", defeats/episode_in_iteration, iteration)
+            writer.add_scalar("charts/num_episode_per_iteration", episode_in_iteration, iteration)
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)

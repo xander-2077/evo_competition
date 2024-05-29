@@ -1,6 +1,6 @@
 algo_name: PPO_cleanrl    # PPO
 env_id: "robo-sumo-ants-v0"
-seed: 1
+seed: 3
 torch_deterministic: True
 cuda: True
 save_model: True

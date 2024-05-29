@@ -27,8 +27,11 @@ class FirstItemWrapper(gym.Wrapper):
         self.env.observation_space = env.observation_space[0]
         self.env.action_space = env.action_space[0]
     
-    def step(self, action, opponent_action):
-        action = (action, opponent_action)
+    def step(self, actions):
+        num_actions = actions.shape[-1] // 2
+        action_self = actions[:num_actions]
+        action_opponent = actions[num_actions:]
+        action = (action_self, action_opponent)
         observation, reward, terminated, truncated, info = self.env.step(action)
         return observation[0], reward[0], any(terminated), truncated, info[0]
     
@@ -98,7 +101,7 @@ def main(args):
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
     args.iteration_alpha_anneal = int(args.num_iterations * 0.15)
-    args.target_kl = None
+    if args.target_kl == 'None': args.target_kl = None
 
     print("batch_size: ", args.batch_size)
     print("minibatch_size: ", args.minibatch_size)
@@ -139,32 +142,42 @@ def main(args):
         [make_env(args.env_id, cfg, args.gamma, render_mode=args.render_mode) for _ in range(args.num_envs)]
     )
 
-    agent = Agent(envs).to(device)
-    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    # Agent
+    agent0 = Agent(envs).to(device)
+    optimizer0 = optim.Adam(agent0.parameters(), lr=args.learning_rate, eps=1e-5)  
+    agent1 = Agent(envs).to(device)
+    optimizer1 = optim.Adam(agent1.parameters(), lr=args.learning_rate, eps=1e-5)
 
-    # Opponent agent and parameters storage
-    opponent_agent = Agent(envs).to(device)
-    opponent_parameters = []
+    agents = [agent0, agent1]
+    optimizers = [optimizer0, optimizer1]
 
     # ALGO Logic: Storage setup
-    obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
-    logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    obs0 = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
+    actions0 = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    logprobs0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    rewards0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    dones0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    values0 = torch.zeros((args.num_steps, args.num_envs)).to(device)
     
-    opponent_obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    opponent_actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
-    opponent_logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    opponent_rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    opponent_dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    opponent_values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    obs1 = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
+    actions1 = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    logprobs1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    rewards1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    dones1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    values1 = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    
+    obs_buffer = [obs0, obs1]
+    actions_buffer = [actions0, actions1]
+    logprobs_buffer = [logprobs0, logprobs1]
+    rewards_buffer = [rewards0, rewards1]
+    dones_buffer = [dones0, dones1]
+    values_buffer = [values0, values1]
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     alpha = 1.0
     start_time = time.time()
+    # TODO:
     next_obs, _ = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
@@ -174,43 +187,34 @@ def main(args):
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
-            optimizer.param_groups[0]["lr"] = lrnow
+            for idx in range(2): 
+                optimizers[idx].param_groups[0]["lr"] = lrnow
         
-        victories = 0
-        defeats = 0
-        episode_in_iteration = 0
-
         alpha = 1.0 - iteration / args.iteration_alpha_anneal if iteration < args.iteration_alpha_anneal else 0.0
         writer.add_scalar("charts/alpha", alpha, global_step)
         
-        # Sample opponent parameters
-        if opponent_parameters:
-            delta = random.uniform(0, 1)
-            sampled_opponent_idx = int((1 - delta) * len(opponent_parameters))
-            opponent_agent.load_state_dict(opponent_parameters[sampled_opponent_idx])
+        for idx in range(2):
+            victories = 0
+            defeats = 0
+            episode_in_iteration = 0
 
-        for step in range(0, args.num_steps):
-            global_step += args.num_envs
-            obs[step] = next_obs
-            dones[step] = next_done
+            for step in range(0, args.num_steps):
+                global_step += args.num_envs
+                obs_buffer[idx][step] = next_obs
+                dones_buffer[idx][step] = next_done
 
-            # ALGO LOGIC: action logic
-            with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs)
-                opponent_action, opponent_logprob, _, opponent_value = opponent_agent.get_action_and_value(next_obs)
-                values[step] = value.flatten()
-                opponent_values[step] = opponent_value.flatten()
-            actions[step] = action
-            logprobs[step] = logprob
-            opponent_actions[step] = opponent_action
-            opponent_logprobs[step] = opponent_logprob
+                # ALGO LOGIC: action logic
+                with torch.no_grad():
+                    action, logprob, _, value = agents[idx].get_action_and_value(next_obs)
+                    values_buffer[idx][step] = value.flatten()
+                actions_buffer[idx][step] = action
+                logprobs_buffer[idx][step] = logprob
 
-            # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy(), opponent_action.cpu().numpy())
-            reward = alpha * infos["reward_dense"] + (1 - alpha) * infos["reward_parse"]  # Curriculum learning
+                # TRY NOT TO MODIFY: execute the game and log data.
+                next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy(), opponent_action.cpu().numpy())
+                reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]  # Curriculum learning
             next_done = np.logical_or(terminations, truncations)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
-            opponent_rewards[step] = torch.tensor([info["reward_dense"] for info in infos[1]]).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
 
             if "final_info" in infos:
@@ -223,32 +227,26 @@ def main(args):
                         episode_in_iteration += 1
                         if info['win_reward'] > 0: 
                             victories += 1
+                            # print(f"win! win_rew: {info['win_reward']}, reward: {reward}")
                         if info['lose_penalty'] < 0: 
                             defeats += 1
+                            # print(f"lose! lose_rew: {info['lose_penalty']}, reward: {reward}")
 
         # bootstrap value if not done
         with torch.no_grad():
             next_value = agent.get_value(next_obs).reshape(1, -1)
-            next_opponent_value = opponent_agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
-            opponent_advantages = torch.zeros_like(opponent_rewards).to(device)
             lastgaelam = 0
-            last_opponent_gaelam = 0
             for t in reversed(range(args.num_steps)):
                 if t == args.num_steps - 1:
                     nextnonterminal = 1.0 - next_done
                     nextvalues = next_value
-                    next_opponent_values = next_opponent_value
                 else:
                     nextnonterminal = 1.0 - dones[t + 1]
                     nextvalues = values[t + 1]
-                    next_opponent_values = opponent_values[t + 1]
                 delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
-                opponent_delta = opponent_rewards[t] + args.gamma * next_opponent_values * nextnonterminal - opponent_values[t]
-                opponent_advantages[t] = last_opponent_gaelam = opponent_delta + args.gamma * args.gae_lambda * nextnonterminal * last_opponent_gaelam
             returns = advantages + values
-            opponent_returns = opponent_advantages + opponent_values
 
         # flatten the batch
         b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
@@ -257,13 +255,6 @@ def main(args):
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values.reshape(-1)
-
-        b_opponent_obs = opponent_obs.reshape((-1,) + envs.single_observation_space.shape)
-        b_opponent_logprobs = opponent_logprobs.reshape(-1)
-        b_opponent_actions = opponent_actions.reshape((-1,) + envs.single_action_space.shape)
-        b_opponent_advantages = opponent_advantages.reshape(-1)
-        b_opponent_returns = opponent_returns.reshape(-1)
-        b_opponent_values = opponent_values.reshape(-1)
 
         # Optimizing the policy and value network
         b_inds = np.arange(args.batch_size)
@@ -279,6 +270,7 @@ def main(args):
                 ratio = logratio.exp()
 
                 with torch.no_grad():
+                    # calculate approx_kl http://joschu.net/blog/kl-approx.html
                     old_approx_kl = (-logratio).mean()
                     approx_kl = ((ratio - 1) - logratio).mean()
                     clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
@@ -287,10 +279,12 @@ def main(args):
                 if args.norm_adv:
                     mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
 
+                # Policy loss
                 pg_loss1 = -mb_advantages * ratio
                 pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
+                # Value loss
                 newvalue = newvalue.view(-1)
                 if args.clip_vloss:
                     v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
@@ -313,57 +307,19 @@ def main(args):
                 nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
                 optimizer.step()
 
-                _, opponent_newlogprob, opponent_entropy, opponent_newvalue = opponent_agent.get_action_and_value(b_opponent_obs[mb_inds], b_opponent_actions[mb_inds])
-                opponent_logratio = opponent_newlogprob - b_opponent_logprobs[mb_inds]
-                opponent_ratio = opponent_logratio.exp()
-
-                with torch.no_grad():
-                    opponent_old_approx_kl = (-opponent_logratio).mean()
-                    opponent_approx_kl = ((opponent_ratio - 1) - opponent_logratio).mean()
-                    clipfracs += [((opponent_ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
-
-                mb_opponent_advantages = b_opponent_advantages[mb_inds]
-                if args.norm_adv:
-                    mb_opponent_advantages = (mb_opponent_advantages - mb_opponent_advantages.mean()) / (mb_opponent_advantages.std() + 1e-8)
-
-                opponent_pg_loss1 = -mb_opponent_advantages * opponent_ratio
-                opponent_pg_loss2 = -mb_opponent_advantages * torch.clamp(opponent_ratio, 1 - args.clip_coef, 1 + args.clip_coef)
-                opponent_pg_loss = torch.max(opponent_pg_loss1, opponent_pg_loss2).mean()
-
-                opponent_newvalue = opponent_newvalue.view(-1)
-                if args.clip_vloss:
-                    opponent_v_loss_unclipped = (opponent_newvalue - b_opponent_returns[mb_inds]) ** 2
-                    opponent_v_clipped = b_opponent_values[mb_inds] + torch.clamp(
-                        opponent_newvalue - b_opponent_values[mb_inds],
-                        -args.clip_coef,
-                        args.clip_coef,
-                    )
-                    opponent_v_loss_clipped = (opponent_v_clipped - b_opponent_returns[mb_inds]) ** 2
-                    opponent_v_loss_max = torch.max(opponent_v_loss_unclipped, opponent_v_loss_clipped)
-                    opponent_v_loss = 0.5 * opponent_v_loss_max.mean()
-                else:
-                    opponent_v_loss = 0.5 * ((opponent_newvalue - b_opponent_returns[mb_inds]) ** 2).mean()
-
-                opponent_entropy_loss = opponent_entropy.mean()
-                opponent_loss = opponent_pg_loss - args.ent_coef * opponent_entropy_loss + opponent_v_loss * args.vf_coef
-
-                optimizer.zero_grad()
-                opponent_loss.backward()
-                nn.utils.clip_grad_norm_(opponent_agent.parameters(), args.max_grad_norm)
-                optimizer.step()
-
-        # Save the current parameters of the opponent
-        opponent_parameters.append(opponent_agent.state_dict())
+            if args.target_kl is not None and approx_kl > args.target_kl:
+                break
 
         y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
         if episode_in_iteration > 0:
-            writer.add_scalar("charts/success_rate", victories / episode_in_iteration, iteration)
-            writer.add_scalar("charts/loss_rate", defeats / episode_in_iteration, iteration)
+            writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
+            writer.add_scalar("charts/loss_rate", defeats/episode_in_iteration, iteration)
             writer.add_scalar("charts/num_episode_per_iteration", episode_in_iteration, iteration)
 
+        # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
         writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
@@ -375,7 +331,11 @@ def main(args):
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-    envs.close()
+        if args.save_model and iteration % args.save_model_interval == 0:
+            model_path = f"agent_iter_{iteration}.pth"
+            torch.save(agent.state_dict(), model_path)
+            print(f"model saved to {model_path}")
+
     writer.close()
 
 
