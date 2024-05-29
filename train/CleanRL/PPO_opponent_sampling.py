@@ -1,14 +1,12 @@
 import os
 import random
 import time
-from dataclasses import dataclass
 
 import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import tyro
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 
@@ -17,9 +15,10 @@ sys.path.append('/root/ws')
 import competevo
 import gym_compete
 import hydra
-from datetime import datetime
-from omegaconf import OmegaConf
 from pprint import pprint
+from config.config import Config
+import argparse
+from utils.tools import str2bool
 
 
 class FirstItemWrapper(gym.Wrapper):
@@ -38,12 +37,11 @@ class FirstItemWrapper(gym.Wrapper):
         return observation[0], _
 
 
-def make_env(env_id, idx, capture_video, run_name, gamma, render_mode=None):
+def make_env(env_id, cfg, gamma, render_mode=None):
     def thunk():
-        env = gym.make(env_id, cfg={}, render_mode=render_mode)
+        env = gym.make(env_id, cfg=cfg, render_mode=render_mode)
             
         env = FirstItemWrapper(env)
-
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
@@ -51,7 +49,6 @@ def make_env(env_id, idx, capture_video, run_name, gamma, render_mode=None):
         env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         env = gym.wrappers.NormalizeReward(env, gamma=gamma)
         env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        
         return env
 
     return thunk
@@ -95,19 +92,20 @@ class Agent(nn.Module):
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
 
-@hydra.main(config_path="../../cfg", config_name="config", version_base="1.3")
+@hydra.main(config_path="../../cfg", config_name="PPO_opponent_sampling_cleanrl", version_base="1.3")
 def main(args):
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
+    args.iteration_alpha_anneal = int(args.num_iterations * 0.15)
+    args.target_kl = None
 
     print("batch_size: ", args.batch_size)
     print("minibatch_size: ", args.minibatch_size)
     print("num_iterations: ", args.num_iterations)
+    print("iteration_alpha_anneal: ", args.iteration_alpha_anneal)
     
-    import pdb; pdb.set_trace()
-
-    run_name = f"{datetime.now().strftime('%m-%d_%H-%M')}_{args.exp_name}_{args.seed}"
+    input()  # Press any key to continue!
 
     writer = SummaryWriter(log_dir='.')
     writer.add_text(
@@ -124,16 +122,28 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
+    parser = argparse.ArgumentParser(description="User's arguments from terminal.")
+    parser.add_argument("--cfg", 
+                        dest="cfg_file", 
+                        help="Config file", 
+                        default='/root/ws/config/robo-sumo-ants-v0.yaml',
+                        type=str)
+    parser.add_argument('--use_cuda', type=str2bool, default=True)
+    parser.add_argument('--gpu_index', type=int, default=0)
+    parser.add_argument('--num_threads', type=int, default=72)
+    parser.add_argument('--epoch', type=str, default='0')
+    argument = parser.parse_args()
+    cfg = Config(argument.cfg_file)
+
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, i, args.capture_video, run_name, args.gamma, render_mode=args.render_mode) for i in range(args.num_envs)]
+        [make_env(args.env_id, cfg, args.gamma, render_mode=args.render_mode) for _ in range(args.num_envs)]
     )
 
-    agent0 = Agent(envs).to(device)
-    optimizer0 = optim.Adam(agent0.parameters(), lr=args.learning_rate, eps=1e-5)
-    agent1 = Agent(envs).to(device)
-    optimizer1 = optim.Adam(agent1.parameters(), lr=args.learning_rate, eps=1e-5)
+    agent = Agent(envs).to(device)
+    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
-    # Storage for opponent parameters
+    # Opponent agent and parameters storage
+    opponent_agent = Agent(envs).to(device)
     opponent_parameters = []
 
     # ALGO Logic: Storage setup
@@ -143,7 +153,7 @@ def main(args):
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
-
+    
     opponent_obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
     opponent_actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
     opponent_logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -164,20 +174,20 @@ def main(args):
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
-            optimizer0.param_groups[0]["lr"] = lrnow
-            optimizer1.param_groups[0]["lr"] = lrnow
+            optimizer.param_groups[0]["lr"] = lrnow
         
         victories = 0
         defeats = 0
         episode_in_iteration = 0
-        alpha = 1.0-iteration/args.iteration_alpha_anneal if iteration < args.iteration_alpha_anneal else 0.0
+
+        alpha = 1.0 - iteration / args.iteration_alpha_anneal if iteration < args.iteration_alpha_anneal else 0.0
         writer.add_scalar("charts/alpha", alpha, global_step)
         
         # Sample opponent parameters
         if opponent_parameters:
             delta = random.uniform(0, 1)
             sampled_opponent_idx = int((1 - delta) * len(opponent_parameters))
-            agent1.load_state_dict(opponent_parameters[sampled_opponent_idx])
+            opponent_agent.load_state_dict(opponent_parameters[sampled_opponent_idx])
 
         for step in range(0, args.num_steps):
             global_step += args.num_envs
@@ -186,8 +196,8 @@ def main(args):
 
             # ALGO LOGIC: action logic
             with torch.no_grad():
-                action, logprob, _, value = agent0.get_action_and_value(next_obs)
-                opponent_action, opponent_logprob, _, opponent_value = agent1.get_action_and_value(next_obs)
+                action, logprob, _, value = agent.get_action_and_value(next_obs)
+                opponent_action, opponent_logprob, _, opponent_value = opponent_agent.get_action_and_value(next_obs)
                 values[step] = value.flatten()
                 opponent_values[step] = opponent_value.flatten()
             actions[step] = action
@@ -197,8 +207,7 @@ def main(args):
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy(), opponent_action.cpu().numpy())
-            # Curriculum learning
-            reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]
+            reward = alpha * infos["reward_dense"] + (1 - alpha) * infos["reward_parse"]  # Curriculum learning
             next_done = np.logical_or(terminations, truncations)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             opponent_rewards[step] = torch.tensor([info["reward_dense"] for info in infos[1]]).to(device).view(-1)
@@ -212,13 +221,15 @@ def main(args):
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
                         episode_in_iteration += 1
-                        if info['win_reward'] > 0: victories += 1
-                        if info['lose_penalty'] < 0: defeats += 1
+                        if info['win_reward'] > 0: 
+                            victories += 1
+                        if info['lose_penalty'] < 0: 
+                            defeats += 1
 
         # bootstrap value if not done
         with torch.no_grad():
-            next_value = agent0.get_value(next_obs).reshape(1, -1)
-            next_opponent_value = agent1.get_value(next_obs).reshape(1, -1)
+            next_value = agent.get_value(next_obs).reshape(1, -1)
+            next_opponent_value = opponent_agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             opponent_advantages = torch.zeros_like(opponent_rewards).to(device)
             lastgaelam = 0
@@ -263,7 +274,7 @@ def main(args):
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy, newvalue = agent0.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
@@ -297,12 +308,12 @@ def main(args):
                 entropy_loss = entropy.mean()
                 loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
 
-                optimizer0.zero_grad()
+                optimizer.zero_grad()
                 loss.backward()
-                nn.utils.clip_grad_norm_(agent0.parameters(), args.max_grad_norm)
-                optimizer0.step()
+                nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                optimizer.step()
 
-                _, opponent_newlogprob, opponent_entropy, opponent_newvalue = agent1.get_action_and_value(b_opponent_obs[mb_inds], b_opponent_actions[mb_inds])
+                _, opponent_newlogprob, opponent_entropy, opponent_newvalue = opponent_agent.get_action_and_value(b_opponent_obs[mb_inds], b_opponent_actions[mb_inds])
                 opponent_logratio = opponent_newlogprob - b_opponent_logprobs[mb_inds]
                 opponent_ratio = opponent_logratio.exp()
 
@@ -336,20 +347,24 @@ def main(args):
                 opponent_entropy_loss = opponent_entropy.mean()
                 opponent_loss = opponent_pg_loss - args.ent_coef * opponent_entropy_loss + opponent_v_loss * args.vf_coef
 
-                optimizer1.zero_grad()
+                optimizer.zero_grad()
                 opponent_loss.backward()
-                nn.utils.clip_grad_norm_(agent1.parameters(), args.max_grad_norm)
-                optimizer1.step()
+                nn.utils.clip_grad_norm_(opponent_agent.parameters(), args.max_grad_norm)
+                optimizer.step()
 
         # Save the current parameters of the opponent
-        opponent_parameters.append(agent1.state_dict())
+        opponent_parameters.append(opponent_agent.state_dict())
 
         y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-        print("SPS:", int(global_step / (time.time() - start_time)))
-        writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+        if episode_in_iteration > 0:
+            writer.add_scalar("charts/success_rate", victories / episode_in_iteration, iteration)
+            writer.add_scalar("charts/loss_rate", defeats / episode_in_iteration, iteration)
+            writer.add_scalar("charts/num_episode_per_iteration", episode_in_iteration, iteration)
+
+        writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
         writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
         writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
@@ -357,9 +372,8 @@ def main(args):
         writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
-
-        if len(opponent_parameters) > args.max_opponent_versions:
-            opponent_parameters.pop(0)
+        print("SPS:", int(global_step / (time.time() - start_time)))
+        writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
     envs.close()
     writer.close()
