@@ -49,12 +49,13 @@ env = gym.make(cfg.env_name, cfg=cfg)
 obs, _ = env.reset()
 
 for _ in range(10000):
-   action = env.action_space.sample()  # this is where you would insert your policy
-   start_time = time()
-   observation, reward, terminated, truncated, info = env.step(action)
-   end_time = time()
-   print(end_time-start_time)
+    action = env.action_space.sample()  # this is where you would insert your policy
+#    start_time = time()
+    observation, reward, terminated, truncated, info = env.step(action)
+#    print(time()-start_time)
+    # print(observation[0]-observation[1])
 
-   if any(terminated) or truncated:
-      observation, info = env.reset()
+    # import pdb; pdb.set_trace()
+    if any(terminated) or truncated:
+        observation, info = env.reset()
 env.close()

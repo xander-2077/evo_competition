@@ -35,7 +35,7 @@ class FirstItemWrapper(gym.Wrapper):
         action_opponent = actions[num_actions:]
         action = (action_self, action_opponent)
         observation, reward, terminated, truncated, info = self.env.step(action)
-        return observation[0], reward[0], any(terminated), truncated, info[0]
+        return observation, reward[0], any(terminated), truncated, info[0]
     
     def reset(self):
         observation, _ = self.env.reset()
@@ -198,13 +198,14 @@ def main(args):
                 agent_opponent.load_state_dict(torch.load("agent_best.pth"))
                 agent_opponent.eval()
                 with torch.no_grad():
-                    action_opponent, _, _, _ = agent_opponent.get_action_and_value(next_obs)
+                    action_opponent, _, _, _ = agent_opponent.get_action_and_value(next_obs_opponent)
                 action_opponent = action_opponent.cpu().numpy()
             
-            # import pdb; pdb.set_trace()
             # TRY NOT TO MODIFY: execute the game and log data.
             action = np.concatenate((action.cpu().numpy(), action_opponent), axis=-1)
             next_obs, reward, terminations, truncations, infos = envs.step(action)
+            next_obs = next_obs[0]
+            next_obs_opponent = next_obs[1]
             reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]  # Curriculum learning
             next_done = np.logical_or(terminations, truncations)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
