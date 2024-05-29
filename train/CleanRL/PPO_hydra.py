@@ -101,6 +101,7 @@ def main(args):
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
     args.iteration_alpha_anneal = int(args.num_iterations * 0.15)
+    args.target_kl = None
 
     print("batch_size: ", args.batch_size)
     print("minibatch_size: ", args.minibatch_size)

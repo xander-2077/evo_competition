@@ -24,13 +24,13 @@ clip_vloss: True
 ent_coef: 0.0  # 0.1
 vf_coef: 0.5
 max_grad_norm: 0.5
-target_kl: None
 
 # to be filled in runtime
 batch_size: 50000
 minibatch_size: 2000
 num_iterations: 0
 iteration_alpha_anneal: 500
+target_kl: None
 
 save_model_interval: 10
 
