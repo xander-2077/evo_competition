@@ -29,23 +29,23 @@ class FirstItemWrapper(gym.Wrapper):
         self.env.action_space = gym.spaces.Box(-1.0, 1.0, (16,), np.float32)
     
     def step(self, actions):
-        # import pdb; pdb.set_trace()
         num_actions = actions.shape[-1] // 2
         action_self = actions[:num_actions]
         action_opponent = actions[num_actions:]
         action = (action_self, action_opponent)
         observation, reward, terminated, truncated, info = self.env.step(action)
-        return observation, reward[0], any(terminated), truncated, info[0]
+        info[0]['opponent_observation'] = observation[1]
+        return observation[0], reward[0], any(terminated), truncated, info[0]
     
     def reset(self):
-        observation, _ = self.env.reset()
-        return observation[0], _
+        observation, info = self.env.reset()
+        info['opponent_observation'] = observation[1]
+        return observation[0], info
 
 
 def make_env(env_id, cfg, gamma, render_mode=None):
     def thunk():
         env = gym.make(env_id, cfg=cfg, render_mode=render_mode)
-            
         env = FirstItemWrapper(env)
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
@@ -198,14 +198,13 @@ def main(args):
                 agent_opponent.load_state_dict(torch.load("agent_best.pth"))
                 agent_opponent.eval()
                 with torch.no_grad():
-                    action_opponent, _, _, _ = agent_opponent.get_action_and_value(next_obs_opponent)
+                    action_opponent, _, _, _ = agent_opponent.get_action_and_value(opponent_obs)
                 action_opponent = action_opponent.cpu().numpy()
             
             # TRY NOT TO MODIFY: execute the game and log data.
             action = np.concatenate((action.cpu().numpy(), action_opponent), axis=-1)
             next_obs, reward, terminations, truncations, infos = envs.step(action)
-            next_obs = next_obs[0]
-            next_obs_opponent = next_obs[1]
+            opponent_obs = torch.tensor(np.stack(infos['opponent_observation']), dtype=torch.float32).to(device)
             reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]  # Curriculum learning
             next_done = np.logical_or(terminations, truncations)
             rewards[step] = torch.tensor(reward).to(device).view(-1)

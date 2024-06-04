@@ -33,10 +33,10 @@ iteration_alpha_anneal: 500
 target_kl: None
 
 save_model_interval: 10
-
+delta: 0.0
 
 hydra:
   job:
     chdir: true
   run:
-    dir: ./runs/${env_id}/${now:%m-%d_%H-%M}_${algo_name}
+    dir: ./runs/${env_id}_oppenent_sampling/${now:%m-%d_%H-%M}_${algo_name}

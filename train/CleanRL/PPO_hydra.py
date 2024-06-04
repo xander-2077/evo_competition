@@ -188,10 +188,10 @@ def main(args):
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
-            # import pdb; pdb.set_trace()
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
+            import pdb; pdb.set_trace()
             reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]  # Curriculum learning
             next_done = np.logical_or(terminations, truncations)
             rewards[step] = torch.tensor(reward).to(device).view(-1)

@@ -48,6 +48,8 @@ cfg = Config(args.cfg_file)
 env = gym.make(cfg.env_name, cfg=cfg)
 obs, _ = env.reset()
 
+import pdb; pdb.set_trace()
+
 for _ in range(10000):
     action = env.action_space.sample()  # this is where you would insert your policy
 #    start_time = time()
