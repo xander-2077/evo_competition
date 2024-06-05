@@ -45,12 +45,14 @@ class FirstItemWrapper(gym.Wrapper):
 def make_env(env_id, cfg, gamma, render_mode=None):
     def thunk():
         env = gym.make(env_id, cfg=cfg, render_mode=render_mode)
+
         env = FirstItemWrapper(env)
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
-        env = gym.wrappers.NormalizeObservation(env)
-        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+        # Opponent observation cannot be normalized or transformed
+        # env = gym.wrappers.NormalizeObservation(env)
+        # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         env = gym.wrappers.NormalizeReward(env, gamma=gamma)
         env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
         return env
@@ -153,10 +155,20 @@ def main(args):
     agent1 = Agent(envses[1]).to(device)
     optimizer1 = optim.Adam(agent1.parameters(), lr=args.learning_rate, eps=1e-5)
 
-    agent_opponent = Agent(envses[1]).to(device)
-
     agents = [agent0, agent1]
     optimizers = [optimizer0, optimizer1]
+
+    agent_opponent_for_agent0 = [Agent(envses[1]).to(device) for _ in range(args.num_envs)]
+    agent_opponent_for_agent1 = [Agent(envses[0]).to(device) for _ in range(args.num_envs)]
+    agent_opponent = [agent_opponent_for_agent0, agent_opponent_for_agent1]
+
+    agent_opponent_once = [np.zeros(args.num_envs), np.zeros(args.num_envs)]
+
+    model_list = []
+
+    terminated_env_idx = [[], []]
+
+    opponent_obs = [None, None]
 
     # ALGO Logic: Storage setup
     obs = torch.zeros((args.num_steps, args.num_envs) + envses[0].single_observation_space.shape).to(device)
@@ -173,15 +185,11 @@ def main(args):
     dones_buffer = [dones, dones.clone()]
     values_buffer = [values, values.clone()]
 
-    model_list = []
-
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     alpha = 1.0
-    start_time = time.time()
 
     for iteration in range(1, args.num_iterations + 1): 
-        # Annealing the rate if instructed to do so.
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
@@ -189,10 +197,9 @@ def main(args):
                 optimizers[idx].param_groups[0]["lr"] = lrnow
         
         alpha = 1.0 - iteration / args.iteration_alpha_anneal if iteration < args.iteration_alpha_anneal else 0.0
-        writer.add_scalar("charts/alpha", alpha, global_step)
+        writer.add_scalar("charts/alpha", alpha, iteration)
         
         for idx in range(2):
-            # TODO: reset condition
             if iteration == 1:
                 next_obs, _ = envses[idx].reset()
                 next_obs = torch.Tensor(next_obs).to(device)
@@ -216,28 +223,53 @@ def main(args):
 
                 if len(model_list) == 0:
                     action_opponent = np.zeros_like(action.cpu().numpy())
-                else:
-                    start_index = int(len(model_list) * args.delta)
-                    sampled_model_idx = random.choice(model_list[start_index:])
-                    agent_opponent.load_state_dict(torch.load(f"agent{1-idx}/iter_{sampled_model_idx}.pth"))
-                    agent_opponent.eval()
-                    with torch.no_grad():
-                        action_opponent, _, _, _ = agent_opponent.get_action_and_value(opponent_obs)
-                    action_opponent = action_opponent.cpu().numpy()
 
+                elif len(terminated_env_idx[idx]) == 0:
+                    action_opponent = np.zeros_like(action.cpu().numpy())
+                    for env_idx in range(args.num_envs):
+                        if agent_opponent_once[idx][env_idx] > 0:
+                            with torch.no_grad():
+                                _action, _, _, _ = agent_opponent[idx][env_idx].get_action_and_value(opponent_obs[idx][env_idx].unsqueeze(0))
+                            action_opponent[env_idx] = _action.squeeze().cpu().numpy()
+
+                else:
+                    action_opponent = np.zeros_like(action.cpu().numpy())
+                    for env_idx in range(args.num_envs):
+                        if env_idx in terminated_env_idx[idx]:
+                            agent_opponent_once[idx][env_idx] = 1
+
+                            start_index = int(len(model_list) * args.delta)
+                            sampled_model_idx = random.choice(model_list[start_index:])
+                            agent_opponent[idx][env_idx].load_state_dict(torch.load(f"agent{1-idx}_iter_{sampled_model_idx}.pth"))
+                            print(f"agent{1-idx}_iter_{sampled_model_idx}.pth loaded for agent{idx} env{env_idx}")
+
+                            agent_opponent[idx][env_idx].eval()
+                            with torch.no_grad():
+                                _action, _, _, _ = agent_opponent[idx][env_idx].get_action_and_value(opponent_obs[idx][env_idx].unsqueeze(0))
+                            action_opponent[env_idx] = _action.squeeze().cpu().numpy()
+
+                        elif agent_opponent_once[idx][env_idx] > 0:
+                            with torch.no_grad():
+                                _action, _, _, _ = agent_opponent[idx][env_idx].get_action_and_value(opponent_obs[idx][env_idx].unsqueeze(0))
+                            action_opponent[env_idx] = _action.squeeze().cpu().numpy()
+                        
 
                 # TRY NOT TO MODIFY: execute the game and log data.
                 action = np.concatenate((action.cpu().numpy(), action_opponent), axis=-1)
                 next_obs, reward, terminations, truncations, infos = envses[idx].step(action)
-                opponent_obs = torch.tensor(np.stack(infos['opponent_observation']), dtype=torch.float32).to(device)
+                opponent_obs[idx] = torch.tensor(np.stack(infos['opponent_observation']), dtype=torch.float32).to(device)
                 reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]  # Curriculum learning
                 next_done = np.logical_or(terminations, truncations)
                 rewards_buffer[idx][step] = torch.tensor(reward).to(device).view(-1)
                 next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
 
+                terminated_env_idx[idx] = []
+
                 if "final_info" in infos:
-                    for info in infos["final_info"]:
+                    for env_idx, info in enumerate(infos["final_info"]):
                         if info and "episode" in info:
+                            terminated_env_idx[idx].append(env_idx)
+
                             print(f"global_step={global_step}, agent{idx} episodic_return={info['episode']['r']}")
                             writer.add_scalar(f"agent{idx}/episodic_return", info["episode"]["r"], global_step)
                             writer.add_scalar(f"agent{idx}/episodic_length", info["episode"]["l"], global_step)
@@ -272,7 +304,7 @@ def main(args):
             # flatten the batch
             b_obs = obs_buffer[idx].reshape((-1,) + envses[idx].single_observation_space.shape)
             b_logprobs = logprobs_buffer[idx].reshape(-1)
-            b_actions = actions_buffer[idx].reshape((-1,) + envses[idx].single_action_space.shape)
+            b_actions = actions_buffer[idx].reshape((-1,) + gym.spaces.Box(-1.0, 1.0, (8,), np.float32).shape)
             b_advantages = advantages.reshape(-1)
             b_returns = returns.reshape(-1)
             b_values = values_buffer[idx].reshape(-1)
@@ -285,7 +317,6 @@ def main(args):
                 for start in range(0, args.batch_size, args.minibatch_size):
                     end = start + args.minibatch_size
                     mb_inds = b_inds[start:end]
-
                     _, newlogprob, entropy, newvalue = agents[idx].get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
                     logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
@@ -341,19 +372,17 @@ def main(args):
                 writer.add_scalar(f"agent{idx}/num_episode_per_iteration", episode_in_iteration, iteration)
 
             # TRY NOT TO MODIFY: record rewards for plotting purposes
-            writer.add_scalar("charts/learning_rate", optimizers[idx].param_groups[0]["lr"], global_step)
-            writer.add_scalar(f"agent{idx}/value_loss", v_loss.item(), global_step)
-            writer.add_scalar(f"agent{idx}/policy_loss", pg_loss.item(), global_step)
-            writer.add_scalar(f"agent{idx}/entropy", entropy_loss.item(), global_step)
-            writer.add_scalar(f"agent{idx}/old_approx_kl", old_approx_kl.item(), global_step)
-            writer.add_scalar(f"agent{idx}/approx_kl", approx_kl.item(), global_step)
-            writer.add_scalar(f"agent{idx}/clipfrac", np.mean(clipfracs), global_step)
-            writer.add_scalar(f"agent{idx}/explained_variance", explained_var, global_step)
-            print("SPS:", int(global_step / (time.time() - start_time)))
-            writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+            writer.add_scalar("charts/learning_rate", optimizers[idx].param_groups[0]["lr"], iteration)
+            writer.add_scalar(f"agent{idx}/value_loss", v_loss.item(), iteration)
+            writer.add_scalar(f"agent{idx}/policy_loss", pg_loss.item(), iteration)
+            writer.add_scalar(f"agent{idx}/entropy", entropy_loss.item(), iteration)
+            writer.add_scalar(f"agent{idx}/old_approx_kl", old_approx_kl.item(), iteration)
+            writer.add_scalar(f"agent{idx}/approx_kl", approx_kl.item(), iteration)
+            writer.add_scalar(f"agent{idx}/clipfrac", np.mean(clipfracs), iteration)
+            writer.add_scalar(f"agent{idx}/explained_variance", explained_var, iteration)
 
             if args.save_model and iteration % args.save_model_interval == 0:
-                model_path = f"agent{idx}/iter_{iteration}.pth"
+                model_path = f"agent{idx}_iter_{iteration}.pth"
                 if idx == 1 : model_list.append(iteration)
                 torch.save(agents[idx].state_dict(), model_path)
                 print(f"model saved to {model_path}")

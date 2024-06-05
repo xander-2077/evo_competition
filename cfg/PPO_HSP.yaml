@@ -9,7 +9,7 @@ render_mode: None   # None, human, rgb_array, rgb_array_float
 
 # Algorithm specific arguments
 total_timesteps: 166666667
-num_envs: 50  # 50000/num_steps 
+num_envs: 10  # 50000/num_steps 
 num_steps: 1000  # 500, 1000
 num_minibatches: 25  # batchsize/2000
 update_epochs: 6
