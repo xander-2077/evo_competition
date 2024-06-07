@@ -19,7 +19,6 @@ class RoboSumoEnv(MultiAgentEnv):
     PUSH_OUT_COEF = 10.0
 
     def __init__(self, max_episode_steps=500, min_radius=None, max_radius=None, **kwargs):
-        # import pdb; pdb.set_trace()
         super(RoboSumoEnv, self).__init__(**kwargs)
         self._max_episode_steps = max_episode_steps
         self._elapsed_steps = 0

@@ -2,14 +2,12 @@
 import os
 import random
 import time
-from dataclasses import dataclass
 
 import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import tyro
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 
@@ -18,9 +16,10 @@ sys.path.append('/root/ws')
 import competevo
 import gym_compete
 import hydra
-from datetime import datetime
-from omegaconf import OmegaConf
 from pprint import pprint
+from config.config import Config
+import argparse
+from utils.tools import str2bool
 
 
 class FirstItemWrapper(gym.Wrapper):
@@ -31,6 +30,7 @@ class FirstItemWrapper(gym.Wrapper):
     
     def step(self, action):
         # TODO: add opponent action
+        # import pdb; pdb.set_trace()
         action = (action, np.zeros_like(action))
         observation, reward, terminated, truncated, info = self.env.step(action)
         # import pdb; pdb.set_trace()
@@ -41,12 +41,11 @@ class FirstItemWrapper(gym.Wrapper):
         return observation[0], _
 
 
-def make_env(env_id, idx, capture_video, run_name, gamma, render_mode=None):
+def make_env(env_id, cfg, gamma, render_mode=None):
     def thunk():
-        env = gym.make(env_id, cfg={}, render_mode=render_mode)
+        env = gym.make(env_id, cfg=cfg, render_mode=render_mode)
             
         env = FirstItemWrapper(env)
-
         env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
@@ -54,7 +53,6 @@ def make_env(env_id, idx, capture_video, run_name, gamma, render_mode=None):
         env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         env = gym.wrappers.NormalizeReward(env, gamma=gamma)
         env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        
         return env
 
     return thunk
@@ -98,37 +96,20 @@ class Agent(nn.Module):
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
 
-@hydra.main(config_path="../../cfg", config_name="config", version_base="1.3")
+@hydra.main(config_path="../../cfg", config_name="PPO_cleanrl", version_base="1.3")
 def main(args):
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
+    args.iteration_alpha_anneal = int(args.num_iterations * 0.15)
+    if args.target_kl == 'None': args.target_kl = None
 
     print("batch_size: ", args.batch_size)
     print("minibatch_size: ", args.minibatch_size)
     print("num_iterations: ", args.num_iterations)
+    print("iteration_alpha_anneal: ", args.iteration_alpha_anneal)
     
-    import pdb; pdb.set_trace()
-
-    run_name = f"{datetime.now().strftime('%m-%d_%H-%M')}_{args.exp_name}_{args.seed}"
-    # if args.track:
-    #     import wandb
-    #     wandb.init(
-    #         project=args.wandb_project_name,
-    #         entity=args.wandb_entity,
-    #         name=run_name,
-    #         sync_tensorboard=True,
-    #         config=OmegaConf.to_container(args, resolve=True, enum_to_str=True),
-    #         monitor_gym=True,
-    #         save_code=False,
-    #     )
-
-    # root_dir = "./runs" + '/' + args.env_id + '/'
-    # if not os.path.exists(root_dir): os.makedirs(root_dir)
-    # current_time = datetime.now().strftime('%m-%d_%H-%M')
-    # root_dir = root_dir + '/' + current_time + '_' + 'PPO_cleanrl' + '/'
-    # if not os.path.exists(root_dir): os.makedirs(root_dir)
-    # writer = SummaryWriter(log_dir=root_dir)
+    input()  # Press any key to continue!
 
     writer = SummaryWriter(log_dir='.')
     writer.add_text(
@@ -145,10 +126,23 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, i, args.capture_video, run_name, args.gamma, render_mode=args.render_mode) for i in range(args.num_envs)]
-    )
+    parser = argparse.ArgumentParser(description="User's arguments from terminal.")
+    parser.add_argument("--cfg", 
+                    dest="cfg_file", 
+                    help="Config file", 
+                    default='/root/ws/config/robo-sumo-ants-v0.yaml',
+                    type=str)
+    parser.add_argument('--use_cuda', type=str2bool, default=True)
+    parser.add_argument('--gpu_index', type=int, default=0)
+    parser.add_argument('--num_threads', type=int, default=72)
+    parser.add_argument('--epoch', type=str, default='0')
+    argument = parser.parse_args()
+    cfg = Config(argument.cfg_file)
 
+    envs = gym.vector.SyncVectorEnv(
+        [make_env(args.env_id, cfg, args.gamma, render_mode=args.render_mode) for _ in range(args.num_envs)]
+    )
+    # import pdb; pdb.set_trace()
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
@@ -177,7 +171,9 @@ def main(args):
             optimizer.param_groups[0]["lr"] = lrnow
         
         victories = 0
+        defeats = 0
         episode_in_iteration = 0
+
         alpha = 1.0-iteration/args.iteration_alpha_anneal if iteration < args.iteration_alpha_anneal else 0.0
         writer.add_scalar("charts/alpha", alpha, global_step)
         
@@ -195,8 +191,8 @@ def main(args):
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-            # Curriculum learning
-            reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]
+            import pdb; pdb.set_trace()
+            reward = alpha * infos["reward_dense"] + (1-alpha) * infos["reward_parse"]  # Curriculum learning
             next_done = np.logical_or(terminations, truncations)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
@@ -209,7 +205,12 @@ def main(args):
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
                         episode_in_iteration += 1
-                        if info['win_reward'] > 0: victories += 1
+                        if info['win_reward'] > 0: 
+                            victories += 1
+                            # print(f"win! win_rew: {info['win_reward']}, reward: {reward}")
+                        if info['lose_penalty'] < 0: 
+                            defeats += 1
+                            # print(f"lose! lose_rew: {info['lose_penalty']}, reward: {reward}")
 
         # bootstrap value if not done
         with torch.no_grad():
@@ -293,7 +294,11 @@ def main(args):
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-        writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
+        if episode_in_iteration > 0:
+            writer.add_scalar("charts/success_rate", victories/episode_in_iteration, iteration)
+            writer.add_scalar("charts/loss_rate", defeats/episode_in_iteration, iteration)
+            writer.add_scalar("charts/num_episode_per_iteration", episode_in_iteration, iteration)
+
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
@@ -307,25 +312,9 @@ def main(args):
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
         if args.save_model and iteration % args.save_model_interval == 0:
-            # model_path = root_dir + f"{args.exp_name}.cleanrl_model"
             model_path = f"agent_iter_{iteration}.pth"
             torch.save(agent.state_dict(), model_path)
             print(f"model saved to {model_path}")
-
-            # from eval.ppo_eval_cleanrl import evaluate
-
-            # episodic_returns = evaluate(
-            #     model_path,
-            #     make_env,
-            #     args.env_id,
-            #     eval_episodes=10,
-            #     run_name=f"{run_name}-eval",
-            #     Model=Agent,
-            #     device=device,
-            #     gamma=args.gamma,
-            # )
-            # for idx, episodic_return in enumerate(episodic_returns):
-            #     writer.add_scalar("eval/episodic_return", episodic_return, idx)
 
     # envs.close()  # It seems that this method does not exist in the original code >_<
     writer.close()
