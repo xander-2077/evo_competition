@@ -41,7 +41,7 @@ if __name__ == "__main__":
     sys.path.append('/root/ws/')
     from train.CleanRL.PPO_hydra import Agent, make_env
 
-    model_path = '/root/ws/runs/robo-sumo-ants-v0/05-11_14-56_PPO_cleanrl/runs/robo-sumo-ants-v0/05-11_14-56_PPO_cleanrl/PPO_cleanrl.cleanrl_model'
+    model_path = '/root/ws/agent_iter_3330.pth'
     evaluate(
         model_path,
         make_env,
