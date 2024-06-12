@@ -97,6 +97,38 @@ class Agent(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
+class Agent_eval(nn.Module):
+    def __init__(self, envs):
+        super().__init__()
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 1), std=1.0),
+        )
+        self.actor_mean = nn.Sequential(
+            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, np.prod(gym.spaces.Box(-1.0, 1.0, (8,), np.float32).shape)), std=0.01),
+        )
+        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(gym.spaces.Box(-1.0, 1.0, (8,), np.float32).shape)))
+
+    def get_value(self, x):
+        return self.critic(x)
+
+    def get_action_and_value(self, x, action=None):
+        action_mean = self.actor_mean(x)
+        # action_logstd = self.actor_logstd.expand_as(action_mean)
+        action_logstd = self.actor_logstd.squeeze()
+        action_std = torch.exp(action_logstd)
+        probs = Normal(action_mean, action_std)
+        if action is None:
+            action = probs.sample()
+        # import pdb; pdb.set_trace()
+        return action, probs.log_prob(action).sum(), probs.entropy().sum(), self.critic(x)
 
 @hydra.main(config_path="../../cfg", config_name="PPO_opponent_sampling_cleanrl", version_base="1.3")
 def main(args):
@@ -389,6 +421,54 @@ def main(args):
 
     writer.close()
 
+@hydra.main(config_path="../../cfg", config_name="PPO_opponent_sampling_cleanrl", version_base="1.3")
+def eval(args):
+    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+
+    # env setup
+    parser = argparse.ArgumentParser(description="User's arguments from terminal.")
+    parser.add_argument("--cfg", 
+                        dest="cfg_file", 
+                        help="Config file", 
+                        default='/root/ws/config/robo-sumo-ants-v0.yaml',
+                        type=str)
+    parser.add_argument('--use_cuda', type=str2bool, default=True)
+    parser.add_argument('--gpu_index', type=int, default=0)
+    parser.add_argument('--num_threads', type=int, default=72)
+    parser.add_argument('--epoch', type=str, default='0')
+    argument = parser.parse_args()
+    cfg = Config(argument.cfg_file)
+
+    args.render_mode = "human"
+
+    env = make_env(args.env_id, cfg, args.gamma, render_mode=args.render_mode)()
+
+    agent0 = Agent_eval(env).to(device)
+    agent1 = Agent_eval(env).to(device)
+
+    model_path0 = '/root/ws/agent_dl/agent0_iter_3640.pth'
+    model_path1 = '/root/ws/agent_dl/agent1_iter_3640.pth'
+
+    agent0.load_state_dict(torch.load(model_path0, map_location=device))
+    agent0.eval()
+    agent1.load_state_dict(torch.load(model_path1, map_location=device))
+    agent1.eval()
+
+    obs, infos = env.reset()
+    opponent_obs = infos['opponent_observation']
+    # import pdb; pdb.set_trace()
+
+    for _ in range(5000):
+        actions0, _, _, _ = agent0.get_action_and_value(torch.Tensor(obs).to(device))
+        actions1, _, _, _ = agent1.get_action_and_value(torch.Tensor(opponent_obs).to(device, torch.float32))
+
+        actions = np.concatenate((actions0.cpu().numpy(), actions1.cpu().numpy()), axis=-1)
+        # import pdb; pdb.set_trace()
+
+        obs, _, _, _, infos = env.step(actions)
+        opponent_obs = infos['opponent_observation']
+
 
 if __name__ == "__main__":
-    main()
+    # main()
+    eval()
